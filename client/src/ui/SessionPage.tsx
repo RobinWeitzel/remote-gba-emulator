@@ -23,6 +23,8 @@ import { bytesToBase64, base64ToBytes } from "../lib/b64";
 import { formatMs, getPlayerName, setPlayerName } from "../lib/player";
 import { useControlLayout } from "../lib/settings";
 import { SettingsMenu } from "./SettingsMenu";
+import { Avatar } from "./Avatar";
+import { IconBack, IconMuted, IconShare, IconUnmuted } from "./icons";
 import {
   DEFAULTS,
   type Role,
@@ -443,27 +445,37 @@ export function SessionPage() {
       data-layout={layout}
     >
       <div className="play-header">
-        <button onClick={onBack}>← Back</button>
+        <button onClick={onBack} title="Back to home" style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+          <IconBack size={12} /> <span>Back</span>
+        </button>
         <div className="role-indicator" data-testid="role-indicator">
           <strong>{saveName || "…"}</strong>
-          <span style={{ color: "#888", marginLeft: 6 }}>{romName}</span>
-          <span className="save-id-chip" style={{ marginLeft: 8 }} data-testid="save-id-chip">
-            #{saveId}
+          <span className="rom-name" style={{ color: "var(--muted)" }}>{romName}</span>
+          <span className="save-id-chip" data-testid="save-id-chip">#{saveId}</span>
+          <span className="conn-state" style={{ color: "var(--muted-soft)" }}>
+            · <span data-testid="role">{role ?? "joining…"}</span> · {connState}
           </span>
-          {" · "}<span data-testid="role">{role ?? "joining…"}</span>
-          <span style={{ color: "#888", marginLeft: 8 }}>· {connState}</span>
         </div>
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-          <button onClick={onShare} className="share-btn" data-testid="share-btn" title="Copy or share the save URL">
-            Share
+          <button onClick={onShare} className="share-btn" data-testid="share-btn" title="Copy or share the save URL"
+                  style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+            <IconShare size={12} /> <span>Share</span>
           </button>
-          <button onClick={toggleMute} data-testid="mute-toggle" title={muted ? "Unmute" : "Mute"}>
-            {muted ? "🔇" : "🔊"}
+          <button onClick={toggleMute} data-testid="mute-toggle" title={muted ? "Unmute" : "Mute"}
+                  style={{ display: "inline-flex", alignItems: "center" }}>
+            {muted ? <IconMuted size={14} /> : <IconUnmuted size={14} />}
           </button>
           <SettingsMenu pref={layoutPref} effective={layout} onChange={setLayoutPref} />
-          <div style={{ fontSize: 11, color: "#888" }} data-testid="roster-summary">
-            {roster.length} {roster.length === 1 ? "player" : "players"}
-          </div>
+          <span style={{ fontSize: 11, color: "var(--muted)", display: "inline-flex", alignItems: "center", gap: 4 }}
+                data-testid="roster-summary"
+                title={`${roster.length} ${roster.length === 1 ? "player" : "players"} in session`}>
+            <div style={{ display: "flex" }}>
+              {roster.slice(0, 4).map((r) => (
+                <span key={r.id} style={{ marginLeft: -4 }}><Avatar name={r.name} size={20} title={`${r.name} (${r.role})`} /></span>
+              ))}
+            </div>
+            {roster.length > 4 && <span>+{roster.length - 4}</span>}
+          </span>
         </div>
       </div>
 
@@ -488,32 +500,42 @@ export function SessionPage() {
 
       {status === "needs-tap" && (
         <div className="start-overlay" data-testid="start-overlay">
-          <h1>{saveName}</h1>
-          <p>
-            <span style={{ color: "var(--muted)" }}>{romName}</span> · you are the {role ?? "…"}.
-          </p>
-          {contributorEntries.length > 0 && (
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "center", marginBottom: 12 }}>
-              {contributorEntries.map(([n, ms]) => (
-                <span key={n} className="contributor-chip">
-                  {n} <em>{formatMs(ms)}</em>
-                </span>
-              ))}
+          <div className="start-card">
+            <div className="start-eyebrow">
+              <span className="rom-chip" style={{ fontSize: 10 }}>{romName}</span>
+              <span>#{saveId}</span>
             </div>
-          )}
-          <p style={{ color: "var(--muted)" }}>
-            Tap below to start. We need the tap to unlock audio and enter
-            fullscreen on mobile.
-          </p>
-          <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
-            <button onClick={onTapStart} data-testid="tap-to-start" className="primary">Tap to start</button>
-            <button
-              onClick={onShare}
-              data-testid="share-overlay"
-              style={{ background: "#222", color: "var(--fg)", border: "1px solid #333" }}
-            >
-              Share link
-            </button>
+            <h1>{saveName}</h1>
+            <div className={`role-pill${role === "follower" ? " follower" : ""}`} data-testid="role-pill">
+              {role === "controller"
+                ? "You're in control"
+                : role === "follower"
+                  ? "You're watching"
+                  : "Joining…"}
+            </div>
+            {contributorEntries.length > 0 && (
+              <div className="contrib-row">
+                {contributorEntries.slice(0, 8).map(([n, ms]) => (
+                  <span key={n} className="contributor-chip" title={`${n} contributed ${formatMs(ms)}`}>
+                    <Avatar name={n} size={18} />
+                    <span className="name">{n}</span>
+                    <span className="time">{formatMs(ms)}</span>
+                  </span>
+                ))}
+              </div>
+            )}
+            <p className="start-sub">
+              Tap below to start. We need the tap to unlock audio and enter
+              fullscreen on mobile.
+            </p>
+            <div className="actions">
+              <button onClick={onTapStart} data-testid="tap-to-start" className="primary">
+                Tap to start
+              </button>
+              <button onClick={onShare} data-testid="share-overlay" className="secondary">
+                Share link
+              </button>
+            </div>
           </div>
         </div>
       )}

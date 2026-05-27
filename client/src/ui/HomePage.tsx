@@ -1,21 +1,44 @@
-// Home screen — pick a save (in-progress or fresh), keyed to a mandatory
-// player name. All actions require a name; the name is persisted in
-// localStorage so users only enter it once.
+// Home / landing screen.
+//
+// Three states:
+//   1. First-time (no player name yet) → focused onboarding card prompting
+//      for the name, plus a three-card "how it works" strip.
+//   2. Returning user (name set) → header with player chip, then "Pick up
+//      a save" list, then "Start something new" card, then join-by-link.
+//   3. Empty server (no saves yet) → onboarding card + a clear empty state
+//      that explains the first save can be created below.
 
 import { useEffect, useMemo, useState } from "react";
 import { createSave, listRoms, listSaves, type RomMeta } from "../lib/api";
 import { navigate } from "../lib/router";
-import { formatMs, formatRelTime, getPlayerName, setPlayerName } from "../lib/player";
+import {
+  formatMs,
+  formatRelTime,
+  getPlayerName,
+  setPlayerName,
+} from "../lib/player";
 import type { SaveSummary } from "@gba/shared";
+import { Avatar } from "./Avatar";
+import {
+  IconBookmark,
+  IconGamepad,
+  IconPlay,
+  IconPlus,
+  IconShare,
+  IconUsers,
+} from "./icons";
 
 export function HomePage() {
   const [roms, setRoms] = useState<RomMeta[] | null>(null);
   const [saves, setSaves] = useState<SaveSummary[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [name, setName] = useState<string>(getPlayerName);
+  const [nameDraft, setNameDraft] = useState<string>("");
+  const [editingName, setEditingName] = useState<boolean>(false);
   const [newSaveName, setNewSaveName] = useState<string>("");
   const [newSaveRomId, setNewSaveRomId] = useState<string>("");
   const [creating, setCreating] = useState<boolean>(false);
+  const [joinInput, setJoinInput] = useState<string>("");
 
   useEffect(() => {
     listRoms()
@@ -27,49 +50,38 @@ export function HomePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Poll the saves list while we're on the home page.
   useEffect(() => {
     let alive = true;
     const tick = () => {
       listSaves()
         .then((s) => { if (alive) setSaves(s); })
-        .catch(() => { /* silent */ });
+        .catch(() => { /* silent; server might restart */ });
     };
     tick();
     const iv = window.setInterval(tick, 3000);
     return () => { alive = false; clearInterval(iv); };
   }, []);
 
-  // Keep the localStorage in sync as the user types — but only commit on
-  // blur or before navigation so we don't write on every keystroke.
-  const persistName = () => {
-    setPlayerName(name);
-  };
+  const nameOk = name.trim().length > 0;
 
-  const trimmedName = name.trim();
-  const nameOk = trimmedName.length > 0;
+  const commitName = (raw: string) => {
+    const trimmed = raw.trim();
+    if (!trimmed) return;
+    setPlayerName(trimmed);
+    setName(trimmed);
+    setEditingName(false);
+  };
 
   const goToSave = (save: SaveSummary) => {
     if (!nameOk) return;
-    setPlayerName(name);
     navigate(`/s/${save.id}`);
   };
 
   const onCreateSave = async () => {
     setErr(null);
-    if (!nameOk) {
-      setErr("Enter your player name first.");
-      return;
-    }
-    if (!newSaveName.trim()) {
-      setErr("Give the new save a name (e.g. 'Family Emerald run').");
-      return;
-    }
-    if (!newSaveRomId) {
-      setErr("Pick a ROM.");
-      return;
-    }
-    setPlayerName(name);
+    if (!nameOk) { setErr("Enter your player name first."); return; }
+    if (!newSaveName.trim()) { setErr("Give the new save a name (e.g. 'Family Emerald run')."); return; }
+    if (!newSaveRomId) { setErr("Pick a ROM."); return; }
     setCreating(true);
     try {
       const save = await createSave({ name: newSaveName.trim(), romId: newSaveRomId });
@@ -82,9 +94,21 @@ export function HomePage() {
     }
   };
 
+  const onJoinFromInput = () => {
+    let target = joinInput.trim();
+    if (!target) return;
+    if (target.startsWith("http")) {
+      try {
+        const u = new URL(target);
+        target = u.pathname + u.search;
+      } catch { /* keep raw */ }
+    }
+    if (!target.startsWith("/s/")) target = `/s/${target.replace(/^\/+/, "")}`;
+    navigate(target);
+  };
+
   const orderedSaves = useMemo(() => {
     return [...saves].sort((a, b) => {
-      // Live saves first, then by updatedAt desc.
       const aLive = a.live ? 1 : 0;
       const bLive = b.live ? 1 : 0;
       if (aLive !== bLive) return bLive - aLive;
@@ -93,143 +117,277 @@ export function HomePage() {
   }, [saves]);
 
   return (
-    <div className="home">
-      <h1>Watch-Together GBA</h1>
-      <p style={{ color: "var(--muted)" }}>
-        Saves are shared. Pick one to keep playing — or watch someone else
-        play, then take over when they hand off. Closing your tab leaves the
-        game in the save where you (and others) left it.
-      </p>
-
-      {err && <div className="error" data-testid="home-error">{err}</div>}
-
-      <div className="field">
-        <label htmlFor="name">Your player name (required, remembered on this device)</label>
-        <input
-          id="name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          onBlur={persistName}
-          placeholder="e.g. Robin"
-          data-testid="name-input"
-          autoComplete="off"
-        />
-        {!nameOk && (
-          <div className="hint" style={{ marginTop: 6 }}>
-            We track who contributed to each save by name. Enter yours to play.
+    <div className="home-shell">
+      <div className="home-inner">
+        {/* ===== Hero ===== */}
+        <div className="home-hero">
+          <div className="home-brand">
+            <div className="brand-mark"><IconGamepad size={22} /></div>
+            <div>
+              <h1>Watch-Together GBA</h1>
+              <p className="tagline">Shared GBA saves for your family run.</p>
+            </div>
           </div>
-        )}
-      </div>
-
-      <h2 style={{ fontSize: 16, color: "var(--muted)", marginTop: 24 }}>
-        Saves {orderedSaves.length > 0 ? `(${orderedSaves.length})` : ""}
-      </h2>
-
-      {orderedSaves.length === 0 ? (
-        <div className="hint" data-testid="empty-saves">
-          No saves yet. Create one below and start a run — anyone with access
-          to this server can join it.
+          {nameOk && !editingName && (
+            <button
+              className="player-pill"
+              onClick={() => { setNameDraft(name); setEditingName(true); }}
+              data-testid="player-pill"
+              title="Click to change your name"
+            >
+              <Avatar name={name} size={26} />
+              <span>{name}</span>
+              <span className="change">change</span>
+            </button>
+          )}
         </div>
-      ) : (
-        <ul className="save-list" data-testid="save-list">
-          {orderedSaves.map((s) => {
-            const contributors = Object.entries(s.contributors)
-              .sort((a, b) => b[1] - a[1]);
-            return (
-              <li key={s.id} data-save-id={s.id} className={s.live ? "save-live" : ""}>
-                <div className="save-main">
-                  <div className="save-title">
-                    {s.name}
-                    <span className="save-rom-chip">{s.romName}</span>
-                    {s.live && (
-                      <span className="live-pill" title={`${s.live.participantCount} in session`}>
-                        ● LIVE
-                      </span>
-                    )}
-                  </div>
-                  <div className="save-meta">
-                    {s.live ? (
-                      <>
-                        {s.live.controllerName ? `${s.live.controllerName} is playing` : "Waiting for controller"}
-                        {" · "}
-                        {s.live.participantCount} {s.live.participantCount === 1 ? "person" : "people"} in session
-                      </>
-                    ) : (
-                      <>Last played {formatRelTime(s.updatedAt)}</>
-                    )}
-                  </div>
-                  {contributors.length > 0 && (
-                    <div className="save-contributors">
-                      {contributors.map(([n, ms]) => (
-                        <span key={n} className="contributor-chip" title={`${n}: ${formatMs(ms)}`}>
-                          {n} <em>{formatMs(ms)}</em>
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <button
-                  onClick={() => goToSave(s)}
-                  disabled={!nameOk}
-                  data-testid="open-save"
-                  className="primary"
-                >
-                  {s.live ? "Join" : "Continue"}
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      )}
 
-      {/* New-save form. */}
-      <h2 style={{ fontSize: 16, color: "var(--muted)", marginTop: 32 }}>Start a new save</h2>
-      {!roms && !err && <div>Loading ROMs…</div>}
-      {roms && roms.length === 0 && (
-        <div className="error">
-          No ROMs found. Drop a <code>.gba</code> file into the mounted{" "}
-          <code>/app/server/roms</code> volume and restart the container.
-        </div>
-      )}
-      {roms && roms.length > 0 && (
-        <div className="new-save-form">
-          <div className="field">
-            <label>Save name</label>
-            <input
-              value={newSaveName}
-              onChange={(e) => setNewSaveName(e.target.value)}
-              placeholder="e.g. Family Emerald run"
-              data-testid="new-save-name"
-              autoComplete="off"
+        {err && <div className="alert-error" data-testid="home-error">{err}</div>}
+
+        {/* ===== Onboarding (no name yet) ===== */}
+        {!nameOk && (
+          <div className="onboard-card" data-testid="onboard-card">
+            <h2>Pick a name to get started</h2>
+            <p className="lead">
+              We use your name to show who's playing and to credit your time
+              on each save. It's stored on this device only — no signup, no
+              accounts.
+            </p>
+            <NameForm
+              initialValue=""
+              onSubmit={commitName}
+              cta="Continue"
             />
           </div>
-          <div className="field">
-            <label>ROM</label>
-            <select
-              value={newSaveRomId}
-              onChange={(e) => setNewSaveRomId(e.target.value)}
-              data-testid="new-save-rom"
-            >
-              {roms.map((r) => (
-                <option key={r.id} value={r.id}>{r.name}</option>
-              ))}
-            </select>
-          </div>
-          <button
-            onClick={onCreateSave}
-            disabled={creating || !nameOk || !newSaveName.trim() || !newSaveRomId}
-            data-testid="create-save"
-            className="primary"
-          >
-            {creating ? "Creating…" : "Create save"}
-          </button>
-        </div>
-      )}
+        )}
 
-      <p style={{ marginTop: 32, fontSize: 12, color: "var(--muted)" }}>
-        Need diagnostics? See the{" "}
-        <a href="/spike" style={{ color: "var(--accent)" }}>determinism spike</a>.
-      </p>
+        {/* Name edit inline (name set, but user clicked "change") */}
+        {nameOk && editingName && (
+          <div className="onboard-card" data-testid="onboard-card">
+            <h2>Change your name</h2>
+            <p className="lead">
+              New playtime will be credited to the new name. Old contributions
+              stay attached to the previous name.
+            </p>
+            <NameForm
+              initialValue={nameDraft}
+              onSubmit={commitName}
+              onCancel={() => setEditingName(false)}
+              cta="Save"
+            />
+          </div>
+        )}
+
+        {/* ===== How it works (first-time + when empty) ===== */}
+        {(!nameOk || saves.length === 0) && (
+          <div className="how-it-works">
+            <div className="hiw-card">
+              <span className="num">1</span>
+              <div className="body">
+                <strong>Pick or start a save.</strong> A save is a long-running
+                game everyone in the family can pick up.
+              </div>
+            </div>
+            <div className="hiw-card">
+              <span className="num">2</span>
+              <div className="body">
+                <strong>First in plays, others watch.</strong> Close your tab
+                and the next person can take over — the game waits.
+              </div>
+            </div>
+            <div className="hiw-card">
+              <span className="num">3</span>
+              <div className="body">
+                <strong>Time is credited.</strong> Whoever holds the controls
+                earns minutes on the save's contributor list.
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ===== Saves list ===== */}
+        <div className="section-head">
+          <h2>
+            <IconBookmark size={11} style={{ marginRight: 6, verticalAlign: "-1px" } as any} />
+            Your saves
+          </h2>
+          {orderedSaves.length > 0 && <span className="count">{orderedSaves.length}</span>}
+        </div>
+
+        {orderedSaves.length === 0 ? (
+          <div className="empty-state" data-testid="empty-saves">
+            <div className="em-icon"><IconBookmark size={20} /></div>
+            <div>No saves yet. <strong>Start one below</strong> — anyone who
+              can reach this server will see it here and can hop in.</div>
+          </div>
+        ) : (
+          <ul className="save-list" data-testid="save-list">
+            {orderedSaves.map((s) => {
+              const contributors = Object.entries(s.contributors)
+                .sort((a, b) => b[1] - a[1]);
+              return (
+                <li
+                  key={s.id}
+                  className={`save-card${s.live ? " live" : ""}`}
+                  data-save-id={s.id}
+                >
+                  <div className="save-main">
+                    <div className="save-title-row">
+                      <span className="save-name">{s.name}</span>
+                      <span className="rom-chip">{s.romName}</span>
+                      {s.live && <span className="live-pill">LIVE</span>}
+                    </div>
+                    <div className="save-meta">
+                      {s.live ? (
+                        <>
+                          {s.live.controllerName
+                            ? <><strong>{s.live.controllerName}</strong> is playing</>
+                            : <>Waiting for a controller</>}
+                          {" · "}
+                          {s.live.participantCount} {s.live.participantCount === 1 ? "person" : "people"} in session
+                        </>
+                      ) : (
+                        <>Last played {formatRelTime(s.updatedAt)}</>
+                      )}
+                    </div>
+                    {contributors.length > 0 && (
+                      <div className="contributors" data-testid="contributors">
+                        {contributors.slice(0, 6).map(([n, ms]) => (
+                          <span key={n} className="contributor-chip" title={`${n}: ${formatMs(ms)}`}>
+                            <Avatar name={n} size={20} />
+                            <span className="name">{n}</span>
+                            <span className="time">{formatMs(ms)}</span>
+                          </span>
+                        ))}
+                        {contributors.length > 6 && (
+                          <span className="contributor-chip">+{contributors.length - 6}</span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    className="open-btn"
+                    onClick={() => goToSave(s)}
+                    disabled={!nameOk}
+                    data-testid="open-save"
+                    title={!nameOk ? "Pick a name first" : undefined}
+                  >
+                    {s.live ? (<>Join <IconUsers size={14} style={{ verticalAlign: -2, marginLeft: 4 } as any} /></>) : (<>Continue <IconPlay size={12} style={{ verticalAlign: -1, marginLeft: 4 } as any} /></>)}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+
+        {/* ===== New save ===== */}
+        <div className="section-head">
+          <h2>
+            <IconPlus size={11} style={{ marginRight: 6, verticalAlign: "-1px" } as any} />
+            Start a new save
+          </h2>
+        </div>
+
+        {!roms && !err && <div className="empty-state">Loading ROMs…</div>}
+        {roms && roms.length === 0 && (
+          <div className="alert-error">
+            No ROMs found. Drop a <code>.gba</code> file into the mounted{" "}
+            <code>/app/server/roms</code> volume and restart the container.
+          </div>
+        )}
+        {roms && roms.length > 0 && (
+          <div className="new-save-card">
+            <div className="field">
+              <label>Save name</label>
+              <input
+                value={newSaveName}
+                onChange={(e) => setNewSaveName(e.target.value)}
+                placeholder="e.g. Family Emerald run"
+                data-testid="new-save-name"
+                autoComplete="off"
+              />
+            </div>
+            <div className="field">
+              <label>ROM</label>
+              <select
+                value={newSaveRomId}
+                onChange={(e) => setNewSaveRomId(e.target.value)}
+                data-testid="new-save-rom"
+              >
+                {roms.map((r) => (
+                  <option key={r.id} value={r.id}>{r.name}</option>
+                ))}
+              </select>
+            </div>
+            <button
+              onClick={onCreateSave}
+              disabled={creating || !nameOk || !newSaveName.trim() || !newSaveRomId}
+              data-testid="create-save"
+              title={!nameOk ? "Pick a name first" : undefined}
+            >
+              {creating ? "Creating…" : "Create save"}
+            </button>
+          </div>
+        )}
+
+        {/* ===== Join by link or id ===== */}
+        <div className="section-head">
+          <h2>
+            <IconShare size={11} style={{ marginRight: 6, verticalAlign: "-1px" } as any} />
+            Got a link?
+          </h2>
+        </div>
+        <div className="join-by-input">
+          <input
+            value={joinInput}
+            onChange={(e) => setJoinInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") onJoinFromInput(); }}
+            placeholder="https://…/s/abc12345 or just abc12345"
+            data-testid="join-input"
+          />
+          <button onClick={onJoinFromInput}>Join</button>
+        </div>
+
+        <div className="home-footer">
+          <a href="/spike">Determinism spike</a>
+          <span>·</span>
+          <span>v2 · persistent saves</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ----- Sub-components ----- */
+
+function NameForm({
+  initialValue,
+  onSubmit,
+  onCancel,
+  cta,
+}: {
+  initialValue: string;
+  onSubmit: (v: string) => void;
+  onCancel?: () => void;
+  cta: string;
+}) {
+  const [value, setValue] = useState<string>(initialValue);
+  const ok = value.trim().length > 0;
+  return (
+    <div className="input-row">
+      <input
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter" && ok) onSubmit(value); }}
+        placeholder="Your name (e.g. Robin)"
+        data-testid="name-input"
+        autoFocus
+        autoComplete="off"
+      />
+      {onCancel && (
+        <button onClick={onCancel} style={{ background: "var(--bg-elev-2)" }}>Cancel</button>
+      )}
+      <button onClick={() => onSubmit(value)} disabled={!ok}>{cta}</button>
     </div>
   );
 }
