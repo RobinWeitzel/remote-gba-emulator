@@ -431,6 +431,8 @@ export function HomePage() {
           <a href="/spike">Determinism spike</a>
           <span>·</span>
           <span>v2 · persistent saves</span>
+          <span>·</span>
+          <span title="Build commit" data-testid="build-sha">#{__APP_VERSION__}</span>
         </div>
       </div>
     </div>

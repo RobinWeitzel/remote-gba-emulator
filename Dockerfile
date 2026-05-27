@@ -30,6 +30,12 @@ RUN --mount=type=cache,target=/root/.npm \
 # Copy the rest of the source.
 COPY . .
 
+# Commit SHA stamped into the client build for the footer version display.
+# CI passes `github.sha`; local `docker build` callers can override via
+# `--build-arg GIT_SHA=...`. Defaults to "docker" when neither is set.
+ARG GIT_SHA=docker
+ENV GIT_SHA=$GIT_SHA
+
 # Build the client and typecheck the server.
 RUN npm run build
 
