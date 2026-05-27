@@ -681,6 +681,14 @@ export function SessionPage() {
         if (roleRef.current === "controller") netRef.current?.send({ type: "input", frame: c.getFrame(), button: b, pressed: false });
       }} disabled={!isController} />
 
+      {connState !== "open" && status === "running" && (
+        <div className="conn-banner" data-testid="conn-banner" role="status">
+          {connState === "connecting"
+            ? "Reconnecting…"
+            : "Connection lost — trying to reconnect."}
+        </div>
+      )}
+
       {status === "needs-tap" && (
         <div className="start-overlay" data-testid="start-overlay">
           <div className="start-card">

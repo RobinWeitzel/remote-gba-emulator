@@ -596,6 +596,8 @@ input:focus, select:focus, button:focus-visible {
 }
 .save-menu-item:hover { background: var(--bg-elev-3); }
 .save-menu-item:disabled { opacity: 0.4; cursor: not-allowed; }
+.save-menu-item.save-menu-item-danger { color: #ff9a9a; }
+.save-menu-item.save-menu-item-danger:hover { background: rgba(239, 68, 68, 0.18); color: #ffd0d0; }
 
 /* Archived saves */
 .save-card.archived {
@@ -1075,6 +1077,33 @@ input:focus, select:focus, button:focus-visible {
   animation: fadeIn 0.15s ease-out;
 }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+/* Live-session disconnection banner — overlays the play screen near the
+ * top so a controller doesn't keep mashing inputs into a dead socket. */
+.conn-banner {
+  position: fixed;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(239, 68, 68, 0.92);
+  color: white;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: var(--radius-pill);
+  z-index: 150;
+  box-shadow: var(--shadow-2);
+  pointer-events: none;
+}
+
+/* Honour OS-level "reduced motion". Keep the LIVE-pill ring visible but
+ * static; drop overlay fades. */
+@media (prefers-reduced-motion: reduce) {
+  .live-pill::before { animation: none; }
+  .start-card { animation: none; }
+  .share-toast { animation: none; }
+  .pad-btn { transition: none; }
+}
 
 /* ===================================================================
  *  Save-id chip (used in header)

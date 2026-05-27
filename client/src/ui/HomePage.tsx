@@ -13,6 +13,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   archiveSave,
   createSave,
+  deleteSave,
   listRoms,
   listSaves,
   unarchiveSave,
@@ -145,6 +146,25 @@ export function HomePage() {
     try {
       const updated = await unarchiveSave(save.id);
       setSaves((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
+    } catch (e: any) {
+      setErr(e?.message ?? String(e));
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const onDelete = async (save: SaveSummary) => {
+    setOpenMenuId(null);
+    const ok = window.confirm(
+      `Delete "${save.name}" forever?\n\n` +
+        `The save state, contributor history, and everything on disk will be ` +
+        `permanently removed. This cannot be undone.`,
+    );
+    if (!ok) return;
+    setBusyId(save.id);
+    try {
+      await deleteSave(save.id);
+      setSaves((prev) => prev.filter((s) => s.id !== save.id));
     } catch (e: any) {
       setErr(e?.message ?? String(e));
     } finally {
@@ -305,6 +325,7 @@ export function HomePage() {
                 placeholder="e.g. Family Emerald run"
                 data-testid="new-save-name"
                 autoComplete="off"
+                maxLength={64}
               />
             </div>
             <div className="field">
@@ -356,6 +377,7 @@ export function HomePage() {
                     onOpenMenu={() => setOpenMenuId(openMenuId === s.id ? null : s.id)}
                     onOpenSave={() => goToSave(s)}
                     onUnarchive={() => onUnarchive(s)}
+                    onDelete={() => onDelete(s)}
                   />
                 ))}
               </ul>
@@ -384,6 +406,7 @@ interface SaveCardProps {
   onOpenSave: () => void;
   onArchive?: () => void;
   onUnarchive?: () => void;
+  onDelete?: () => void;
 }
 
 function SaveCard({
@@ -395,6 +418,7 @@ function SaveCard({
   onOpenSave,
   onArchive,
   onUnarchive,
+  onDelete,
 }: SaveCardProps) {
   const contributors = Object.entries(save.contributors).sort((a, b) => b[1] - a[1]);
   return (
@@ -481,6 +505,16 @@ function SaveCard({
                   Restore…
                 </button>
               )}
+              {onDelete && (
+                <button
+                  className="save-menu-item save-menu-item-danger"
+                  onClick={onDelete}
+                  data-testid="action-delete"
+                  disabled={busy}
+                >
+                  Delete forever…
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -512,6 +546,7 @@ function NameForm({
         data-testid="name-input"
         autoFocus
         autoComplete="off"
+        maxLength={32}
       />
       {onCancel && (
         <button onClick={onCancel} style={{ background: "var(--bg-elev-2)" }}>Cancel</button>

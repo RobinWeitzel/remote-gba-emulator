@@ -58,3 +58,12 @@ async function setArchived(id: string, archived: boolean): Promise<SaveSummary> 
 
 export const archiveSave = (id: string) => setArchived(id, true);
 export const unarchiveSave = (id: string) => setArchived(id, false);
+
+export async function deleteSave(id: string): Promise<void> {
+  const res = await fetch(`/api/saves/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!res.ok) {
+    let detail = "";
+    try { detail = (await res.json())?.error ?? ""; } catch { /* ignore */ }
+    throw new Error(`deleteSave: ${res.status}${detail ? ` — ${detail}` : ""}`);
+  }
+}

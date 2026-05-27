@@ -126,6 +126,21 @@ app.post<{ Params: { id: string } }>("/api/saves/:id/unarchive", async (req, rep
   return { save: summarizeSave(updated) };
 });
 
+// Permanently delete a save. Refuses if anyone is currently in the save's
+// live session — they'd see their world rug-pulled. The client is expected
+// to gate this behind "archived only" anyway.
+app.delete<{ Params: { id: string } }>("/api/saves/:id", async (req, reply) => {
+  const meta = saves.get(req.params.id);
+  if (!meta) { reply.code(404); return { error: "not found" }; }
+  if (sessions.get(req.params.id)) {
+    reply.code(409);
+    return { error: "save has live players; archive and wait for them to leave first" };
+  }
+  const ok = await saves.delete(req.params.id);
+  if (!ok) { reply.code(404); return { error: "not found" }; }
+  return { ok: true };
+});
+
 app.post<{ Body: CreateSaveRequest }>("/api/saves", async (req, reply) => {
   const body = req.body ?? ({} as CreateSaveRequest);
   const name = (body.name ?? "").trim().slice(0, MAX_SAVE_NAME_LEN);

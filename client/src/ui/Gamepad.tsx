@@ -128,6 +128,18 @@ function attachDpad(
   };
 }
 
+// Desktop keyboard map. Mirrors the touch layout — arrow keys / WASD on
+// the d-pad, Z/X on B/A (the natural play position), A/S on shoulders,
+// Enter on Start, Right-Shift / Backspace on Select. Keys are matched on
+// e.code so layout (QWERTY/AZERTY/Dvorak) doesn't matter.
+const KEY_MAP: Record<string, GbaButton> = {
+  ArrowUp: "Up", ArrowDown: "Down", ArrowLeft: "Left", ArrowRight: "Right",
+  KeyW: "Up", KeyS: "Down", KeyA: "Left", KeyD: "Right",
+  KeyZ: "B", KeyX: "A",
+  KeyQ: "L", KeyE: "R",
+  Enter: "Start", Backspace: "Select", ShiftRight: "Select",
+};
+
 export function Gamepad({ onPress, onRelease, disabled }: Props) {
   const dpadRef = useRef<HTMLDivElement | null>(null);
   const aRef = useRef<HTMLButtonElement | null>(null);
@@ -137,18 +149,78 @@ export function Gamepad({ onPress, onRelease, disabled }: Props) {
   const startRef = useRef<HTMLButtonElement | null>(null);
   const selectRef = useRef<HTMLButtonElement | null>(null);
 
+  // Stash the latest handlers in refs so the pointer & keyboard effects
+  // can install listeners ONCE per (mount, disabled-flip) — without those
+  // refs, every parent re-render churns through detach/attach (and the
+  // keyboard effect would release every held key on every render).
+  const pressRef = useRef(onPress);
+  const releaseRef = useRef(onRelease);
+  useEffect(() => { pressRef.current = onPress; }, [onPress]);
+  useEffect(() => { releaseRef.current = onRelease; }, [onRelease]);
+  const pressVia = (b: GbaButton) => pressRef.current(b);
+  const releaseVia = (b: GbaButton) => releaseRef.current(b);
+
   useEffect(() => {
     if (disabled) return;
     const offs: (() => void)[] = [];
-    if (dpadRef.current) offs.push(attachDpad(dpadRef.current, onPress, onRelease));
-    if (aRef.current) offs.push(attachButton(aRef.current, "A", onPress, onRelease));
-    if (bRef.current) offs.push(attachButton(bRef.current, "B", onPress, onRelease));
-    if (lRef.current) offs.push(attachButton(lRef.current, "L", onPress, onRelease));
-    if (rRef.current) offs.push(attachButton(rRef.current, "R", onPress, onRelease));
-    if (startRef.current) offs.push(attachButton(startRef.current, "Start", onPress, onRelease));
-    if (selectRef.current) offs.push(attachButton(selectRef.current, "Select", onPress, onRelease));
+    if (dpadRef.current) offs.push(attachDpad(dpadRef.current, pressVia, releaseVia));
+    if (aRef.current) offs.push(attachButton(aRef.current, "A", pressVia, releaseVia));
+    if (bRef.current) offs.push(attachButton(bRef.current, "B", pressVia, releaseVia));
+    if (lRef.current) offs.push(attachButton(lRef.current, "L", pressVia, releaseVia));
+    if (rRef.current) offs.push(attachButton(rRef.current, "R", pressVia, releaseVia));
+    if (startRef.current) offs.push(attachButton(startRef.current, "Start", pressVia, releaseVia));
+    if (selectRef.current) offs.push(attachButton(selectRef.current, "Select", pressVia, releaseVia));
     return () => { for (const o of offs) o(); };
-  }, [onPress, onRelease, disabled]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [disabled]);
+
+  // Keyboard. Only fires when no editable element has focus, so typing
+  // a name in an input doesn't smash the d-pad. Tracks which buttons we
+  // pressed so a blur/visibility flip releases them cleanly.
+  useEffect(() => {
+    if (disabled) return;
+    const held = new Set<GbaButton>();
+    const isEditable = () => {
+      const el = document.activeElement as HTMLElement | null;
+      if (!el) return false;
+      const tag = el.tagName;
+      return tag === "INPUT" || tag === "TEXTAREA" || el.isContentEditable;
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.repeat) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (isEditable()) return;
+      const b = KEY_MAP[e.code];
+      if (!b) return;
+      e.preventDefault();
+      if (held.has(b)) return;
+      held.add(b);
+      pressRef.current(b);
+    };
+    const onKeyUp = (e: KeyboardEvent) => {
+      const b = KEY_MAP[e.code];
+      if (!b) return;
+      e.preventDefault();
+      if (!held.has(b)) return;
+      held.delete(b);
+      releaseRef.current(b);
+    };
+    const releaseAll = () => {
+      for (const b of held) releaseRef.current(b);
+      held.clear();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("blur", releaseAll);
+    document.addEventListener("visibilitychange", releaseAll);
+    return () => {
+      releaseAll();
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", releaseAll);
+      document.removeEventListener("visibilitychange", releaseAll);
+    };
+  }, [disabled]);
 
   const disabledCls = disabled ? " pad-disabled" : "";
 

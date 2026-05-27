@@ -139,4 +139,13 @@ export class SaveStore {
       return null;
     }
   }
+
+  // Permanently remove a save's directory + drop it from the in-memory
+  // index. Used by the "delete forever" affordance on archived saves.
+  async delete(saveId: string): Promise<boolean> {
+    if (!this.metas.has(saveId)) return false;
+    this.metas.delete(saveId);
+    await fs.rm(path.join(this.dir, saveId), { recursive: true, force: true });
+    return true;
+  }
 }
