@@ -50,7 +50,23 @@ Notes:
 - Test ROM `test-arm.gba` is a static CPU-test ROM, not a game; renders "Passed/Failed test N" until it's done. Adequate for verifying boot + render + touch input registration. Real game playthrough verification will happen when the human drops their own ROM.
 
 ## Milestone 2 — Sessions & roster
-- Status: pending
+- Status: **DONE** (2026-05-27)
+
+Implemented:
+- Node WebSocket server (`server/src/index.ts`) using Fastify + @fastify/websocket. Endpoints: `GET /api/roms`, `GET /api/roms/:id`, `GET /ws`. COOP/COEP/CORP + `X-Robots-Tag: noindex` on every response.
+- `SessionStore` (`server/src/sessions.ts`) — in-memory `Map<sessionId, Session>`. FIFO controller queue; first joiner controls. Heartbeat sweep every ~2s removes participants with stale `lastHeartbeat` (default 10s timeout per SPEC §17).
+- Roms are hashed once on startup (`server/src/roms.ts`); ROM hash is enforced on `join` — a second joiner with a different `romHash` gets an `error` with code `rom_mismatch` (SPEC §15 integrity).
+- Vite proxies `/ws` to the Node server in dev; the in-process `devRomApi()` plugin still serves `/api/roms` so the spike works standalone.
+- Client: `SessionPage` (`/s/<sessionId>`) loads the ROM, hashes it, opens a WS connection, sends `join`, handles `welcome` / `roster` / `controllerChanged` / `becomeController` / `error`. Gamepad is `disabled` for followers (visually present, no input).
+- Auto-reconnect WS client (`client/src/net/ws.ts`) with exponential backoff and join replay on reconnect; heartbeats every 3s.
+
+Verified end-to-end with Playwright two-tab test (test session `/s/test123?rom=test-arm.gba`):
+- TabA joins → role = controller, roster = 1.
+- TabB joins → role = follower, roster = 2; TabA's roster updates to 2.
+- TabA closes → TabB's role flips to controller via `controllerChanged`; roster drops to 1.
+
+Notes:
+- M2 wires the roles but does NOT actually sync inputs/snapshots (that's M3). The Node server already accepts and relays `input` / `snapshot` messages, dropping them from non-controllers; the client just doesn't emit them yet.
 
 ## Milestone 3 — Input + snapshot sync
 - Status: pending

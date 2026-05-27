@@ -91,12 +91,28 @@ function devRomApi() {
   };
 }
 
+// If the Node server is running on $SERVER_URL (default localhost:8080), we
+// proxy /api and /ws to it so the WebSocket session hub works during dev.
+// If the proxy fails (server not running), the in-process devRomApi() plugin
+// still serves /api/roms so the M0 spike and M1 solo flow work standalone.
+const SERVER_URL = process.env.SERVER_URL ?? "http://localhost:8080";
+
 export default defineConfig({
   plugins: [react(), devRomApi()],
   server: {
     host: "0.0.0.0",
     port: 5173,
     headers: COOP_COEP_HEADERS,
+    proxy: {
+      "/ws": {
+        target: SERVER_URL.replace(/^http/, "ws"),
+        ws: true,
+      },
+      // Note: devRomApi() plugin handles /api/roms in-process when the Node
+      // server isn't running. When it IS running, the Vite proxy takes over
+      // because middlewares set headers but don't shadow proxies. We still
+      // keep devRomApi() as a fallback for the spike.
+    },
   },
   preview: {
     headers: COOP_COEP_HEADERS,
