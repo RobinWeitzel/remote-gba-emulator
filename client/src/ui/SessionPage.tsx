@@ -82,7 +82,21 @@ export function SessionPage() {
   const [role, setRole] = useState<Role | null>(null);
   const [roster, setRoster] = useState<RosterEntry[]>([]);
   const [selfId, setSelfId] = useState<string | null>(null);
+  // The WS message handler is captured in a closure on first effect run,
+  // so `selfId` from React state is stale by the time messages arrive.
+  // Mirror it into a ref so handlers always read the freshest value.
+  const selfIdRef = useRef<string | null>(null);
+  useEffect(() => { selfIdRef.current = selfId; }, [selfId]);
   const [controllerId, setControllerId] = useState<string | null>(null);
+
+  // Derive role from (selfId, controllerId) — server is the source of
+  // truth for both, and role is just a function of them. Doing this in
+  // an effect instead of inside the message handler avoids the previous
+  // setSelfId((sid) => { setRole(...); return sid; }) workaround.
+  useEffect(() => {
+    if (!selfId || !controllerId) return;
+    setRole(selfId === controllerId ? "controller" : "follower");
+  }, [selfId, controllerId]);
   const [connState, setConnState] = useState<"connecting" | "open" | "closed">("connecting");
   const [muted, setMuted] = useState<boolean>(true);
   const [contributors, setContributors] = useState<Record<string, number>>({});
@@ -353,8 +367,8 @@ export function SessionPage() {
     switch (msg.type) {
       case "welcome": {
         setSelfId(msg.selfId);
-        setRole(msg.role);
         setRoster(msg.roster);
+        // Role is derived from (selfId, controllerId) via useEffect.
         setControllerId(msg.controllerId);
         setSaveName(msg.saveName);
         setContributors(msg.contributors ?? {});
@@ -389,18 +403,10 @@ export function SessionPage() {
       case "roster": {
         setRoster(msg.roster);
         setControllerId(msg.controllerId);
-        setSelfId((sid) => {
-          if (sid && msg.controllerId) setRole(sid === msg.controllerId ? "controller" : "follower");
-          return sid;
-        });
         break;
       }
       case "controllerChanged": {
         setControllerId(msg.controllerId);
-        setSelfId((sid) => {
-          if (sid && msg.controllerId) setRole(sid === msg.controllerId ? "controller" : "follower");
-          return sid;
-        });
         break;
       }
       case "becomeController": {
@@ -418,7 +424,11 @@ export function SessionPage() {
         } else if (coreRef.current) {
           coreRef.current.setSpeed(mult);
         }
-        if (selfId) setRole("controller");
+        // Optimistic role flip. controllerChanged will arrive next from
+        // the server and set the same value; this just shortens the
+        // window before the snapshot loop starts on our side. selfIdRef
+        // stays fresh across handler-closure captures.
+        if (selfIdRef.current) setControllerId(selfIdRef.current);
         const core = coreRef.current;
         const net = netRef.current;
         if (core && net?.isOpen()) {
