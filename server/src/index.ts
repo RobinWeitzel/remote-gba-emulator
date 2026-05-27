@@ -12,6 +12,7 @@
 
 import path from "node:path";
 import fs from "node:fs";
+import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import Fastify from "fastify";
 import fastifyStatic from "@fastify/static";
@@ -36,6 +37,11 @@ import {
 
 const PORT = Number(process.env.PORT ?? 8080);
 const HOST = process.env.HOST ?? "0.0.0.0";
+
+// Bounds on user-supplied strings so a misbehaving client can't pin
+// arbitrary bytes into the contributor ledger or save meta.
+const MAX_PLAYER_NAME_LEN = 32;
+const MAX_SAVE_NAME_LEN = 64;
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -122,7 +128,7 @@ app.post<{ Params: { id: string } }>("/api/saves/:id/unarchive", async (req, rep
 
 app.post<{ Body: CreateSaveRequest }>("/api/saves", async (req, reply) => {
   const body = req.body ?? ({} as CreateSaveRequest);
-  const name = (body.name ?? "").trim();
+  const name = (body.name ?? "").trim().slice(0, MAX_SAVE_NAME_LEN);
   const romId = (body.romId ?? "").trim();
   if (!name) {
     reply.code(400);
@@ -199,7 +205,7 @@ interface SocketAux {
 
 app.get("/ws", { websocket: true }, (socket, _req) => {
   const ws = socket as any;
-  const aux: SocketAux = { connId: cryptoRandom() };
+  const aux: SocketAux = { connId: newConnId() };
   sockets.set(aux.connId, ws);
   app.log.info({ connId: aux.connId }, "ws connected");
 
@@ -235,7 +241,7 @@ async function handleMessage(aux: SocketAux, msg: ClientMsg) {
         sendError(aux.connId, "already_joined", "already joined a save");
         return;
       }
-      const name = (msg.name ?? "").trim();
+      const name = (msg.name ?? "").trim().slice(0, MAX_PLAYER_NAME_LEN);
       if (!name) {
         sendError(aux.connId, "name_required", "Player name is required.");
         return;
@@ -449,8 +455,8 @@ setInterval(() => {
   }
 }, Math.min(DEFAULTS.HEARTBEAT_TIMEOUT_MS / 2, 2000));
 
-function cryptoRandom(): string {
-  return Math.random().toString(36).slice(2) + Date.now().toString(36);
+function newConnId(): string {
+  return crypto.randomUUID();
 }
 
 // Static client serving.

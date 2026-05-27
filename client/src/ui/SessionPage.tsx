@@ -295,8 +295,13 @@ export function SessionPage() {
   const applyServerSnapshot = async (b64: string, frame: number, msgMultiplier?: number) => {
     const core = coreRef.current;
     if (!core) return;
+    const multiplier = msgMultiplier ?? 1;
+    // Remember the most recent applied snapshot so the catchup watchdog
+    // has something to re-anchor to — this includes the welcome bootstrap
+    // and the `becomeController` payload, not just live `snapshot` msgs.
+    lastFullSnapshotRef.current = { data: b64, frame, multiplier };
     if (!runningRef.current) {
-      pendingSnapshotRef.current = { data: b64, frame, multiplier: msgMultiplier ?? 1 };
+      pendingSnapshotRef.current = { data: b64, frame, multiplier };
       return;
     }
     const bytes = base64ToBytes(b64);
@@ -403,6 +408,11 @@ export function SessionPage() {
         const mult = typeof msg.multiplier === "number" && msg.multiplier > 0 ? msg.multiplier : 1;
         multiplierRef.current = mult;
         setMultiplier(mult);
+        // The controller does not need the follower-catchup logic.
+        // Reset it now so a player who was a struggling follower doesn't
+        // carry the stuck-mode flag if they later become follower again.
+        snapshotFollowModeRef.current = false;
+        recentReanchorsRef.current = [];
         if (msg.data) {
           await applyServerSnapshot(msg.data, msg.frame, mult);
         } else if (coreRef.current) {
@@ -441,7 +451,6 @@ export function SessionPage() {
         break;
       }
       case "snapshot": {
-        lastFullSnapshotRef.current = { data: msg.data, frame: msg.frame, multiplier: msg.multiplier ?? 1 };
         await applyServerSnapshot(msg.data, msg.frame, msg.multiplier);
         break;
       }
@@ -546,37 +555,10 @@ export function SessionPage() {
   // ----- needs-name gate: render BEFORE booting WS so we can collect a name -----
   if (status === "needs-name") {
     return (
-      <div className="home" data-testid="needs-name-form">
-        <h1>Pick a name first</h1>
-        <p style={{ color: "var(--muted)" }}>
-          Your name is shown to other players and tracks how much you've
-          contributed to this save. It's saved on this device, so you only
-          need to enter it once.
-        </p>
-        <div className="field">
-          <label htmlFor="name">Your player name</label>
-          <input
-            id="name"
-            placeholder="e.g. Robin"
-            data-testid="name-input"
-            autoFocus
-            onChange={(e) => setPlayerNameState(e.target.value)}
-          />
-        </div>
-        <button
-          onClick={() => {
-            const trimmed = (document.getElementById("name") as HTMLInputElement | null)?.value?.trim() ?? "";
-            if (!trimmed) return;
-            setPlayerName(trimmed);
-            setPlayerNameState(trimmed);
-          }}
-          className="primary"
-          data-testid="name-submit"
-        >
-          Continue
-        </button>
-        <button onClick={() => navigate("/")} style={{ marginLeft: 8 }}>Back to home</button>
-      </div>
+      <NeedsNameForm
+        onSubmit={(n) => { setPlayerName(n); setPlayerNameState(n); }}
+        onCancel={() => navigate("/")}
+      />
     );
   }
 
@@ -737,6 +719,53 @@ export function SessionPage() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// Local controlled form so typing in the input doesn't churn through
+// the parent's `playerName` state — that state is a WS-effect dep and
+// would tear down and reopen the socket on every keystroke.
+function NeedsNameForm({
+  onSubmit,
+  onCancel,
+}: {
+  onSubmit: (name: string) => void;
+  onCancel: () => void;
+}) {
+  const [draft, setDraft] = useState<string>("");
+  const ok = draft.trim().length > 0;
+  const submit = () => { if (ok) onSubmit(draft.trim()); };
+  return (
+    <div className="home" data-testid="needs-name-form">
+      <h1>Pick a name first</h1>
+      <p style={{ color: "var(--muted)" }}>
+        Your name is shown to other players and tracks how much you've
+        contributed to this save. It's saved on this device, so you only
+        need to enter it once.
+      </p>
+      <div className="field">
+        <label htmlFor="name">Your player name</label>
+        <input
+          id="name"
+          placeholder="e.g. Robin"
+          data-testid="name-input"
+          autoFocus
+          maxLength={32}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
+        />
+      </div>
+      <button
+        onClick={submit}
+        className="primary"
+        data-testid="name-submit"
+        disabled={!ok}
+      >
+        Continue
+      </button>
+      <button onClick={onCancel} style={{ marginLeft: 8 }}>Back to home</button>
     </div>
   );
 }
