@@ -27,3 +27,6 @@ coverage/
 # Persistent save data — created at runtime, never committed.
 /server/data/
 /data/
+
+# Brainstorming session scratch (mockups, transient state).
+.superpowers/
