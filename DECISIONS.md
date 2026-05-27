@@ -64,6 +64,27 @@ mGBA save states are **PNG files**. Chunks observed in v0.11/feature-wasm-8614:
 
 → **Use `deterministicStateBytes()`** (defined in `client/src/emulator/loadMgba.ts`) for any hash comparison. It strips the 24-byte RTC `gbAx` chunk before hashing.
 
+## Milestone S — Synchronized speed (SPEC-SPEED §3)
+
+mGBA's verified speed API is `Module.setFastForwardMultiplier(n)`:
+- `n = 1` → normal speed
+- `n > 1` → ×n fast-forward
+- `n < 0` → 1/|n| slow-down
+
+We map `MgbaCore.setSpeed(multiplier)` directly onto it; the ladder is
+`[1, 2, 4, 8]`. Slow-mo (`0.5×` → `setFastForwardMultiplier(-2)`) is
+plumbing-ready but not in the user-visible ladder for v1.
+
+`getFrame` (derived from `videoFrameEndedCallback`) is unaffected by
+the multiplier — the wrapper just counts callbacks, so the frame index
+remains monotonic across speed changes.
+
+To make controller-frame-tagged speed events fire at the right
+emulated moment on each follower, the wrapper exposes
+`setFrame(n)` and `clearPendingBefore(n)`. After every applied snapshot
+the follower re-anchors its JS frame counter to `snapshot.frame` and
+drops any scheduled events that the snapshot has superseded.
+
 ## §12.3 vs §12.4 — chosen sync mode for M3
 **Use §12.4 ("always reload on snapshot") as the default sync mode** for v1 because:
 - Controllers and followers have different lifecycles, so their `gbAs` chunks differ by ~32 bytes ⇒ their det-hashes do NOT match (even though the underlying GBA state is identical after load).

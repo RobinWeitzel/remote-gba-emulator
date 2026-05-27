@@ -711,6 +711,34 @@ input:focus, select:focus, button:focus-visible {
 }
 .play-header .share-btn:hover { background: var(--accent-hi); }
 
+/* Speed control (SPEC-SPEED §6). Controller tap = button; follower
+   read-only = pill. Off-state (1×) blends with the header; on-state
+   tinted amber to flag fast-forward at a glance. */
+.play-header .speed-btn,
+.play-header .speed-pill {
+  font-family: var(--mono);
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-elev-2);
+  color: var(--fg);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+}
+.play-header .speed-btn:hover { background: var(--bg-elev-3); }
+.play-header .speed-btn-on,
+.play-header .speed-pill-on {
+  background: rgba(245, 158, 11, 0.18);
+  border-color: rgba(245, 158, 11, 0.45);
+  color: #ffd591;
+}
+.play-header .speed-pill { cursor: default; }
+
 .play-canvas-wrap {
   display: flex;
   align-items: center;

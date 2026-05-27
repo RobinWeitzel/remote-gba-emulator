@@ -27,6 +27,10 @@ export interface Session {
   latestSnapshot?: SnapshotMeta & { receivedAt: number };
   // Wall-time accounting for the current controller.
   controllerSince: number; // ms timestamp when current controller took over
+  // Synchronized emulation speed (SPEC-SPEED §1). Default 1×; the
+  // controller flips this via the `speed` message and the server
+  // includes it in welcome / snapshot / becomeController.
+  currentMultiplier: number;
 }
 
 export interface ContributionDelta {
@@ -46,6 +50,7 @@ export class SessionStore {
         participants: new Map(),
         controllerQueue: [],
         controllerSince: Date.now(),
+        currentMultiplier: 1,
       };
       this.sessions.set(saveId, s);
     }

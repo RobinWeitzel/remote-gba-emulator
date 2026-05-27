@@ -27,6 +27,8 @@ import { Avatar } from "./Avatar";
 import { IconBack, IconMuted, IconUnmuted } from "./icons";
 import {
   DEFAULTS,
+  SPEED_LADDER,
+  nextLadderSpeed,
   type Role,
   type RosterEntry,
   type ServerMsg,
@@ -47,8 +49,25 @@ export function SessionPage() {
   const roleRef = useRef<Role | null>(null);
   const mutedRef = useRef<boolean>(true);
   const lastSnapshotFrameRef = useRef<number>(-1);
-  const pendingSnapshotRef = useRef<{ data: string; frame: number } | null>(null);
+  const lastSnapshotAtMsRef = useRef<number>(0);
+  const pendingSnapshotRef = useRef<{ data: string; frame: number; multiplier: number } | null>(null);
   const runningRef = useRef<boolean>(false);
+  // Synchronized emulation speed (SPEC-SPEED). Followers track the
+  // controller's multiplier via `welcome` / `snapshot` / `speed`.
+  const multiplierRef = useRef<number>(1);
+  // Frame number of the last snapshot WE RECEIVED from the server (in
+  // the controller's frame-space). After a snapshot apply on the
+  // follower side we set core.setFrame(this) so the follower's frame
+  // counter aligns with the controller's tags.
+  const lastReceivedSnapshotFrameRef = useRef<number>(-1);
+  // Catch-up state (SPEC-SPEED §5). recentReanchors[] is wall-clock
+  // timestamps of recent re-anchor events; when ≥ 3 in 10s, the
+  // follower flips into snapshot-follow mode.
+  const recentReanchorsRef = useRef<number[]>([]);
+  const snapshotFollowModeRef = useRef<boolean>(false);
+  // The most recent snapshot we successfully received (kept so we can
+  // re-apply it for a re-anchor).
+  const lastFullSnapshotRef = useRef<{ data: string; frame: number; multiplier: number } | null>(null);
   // Track whether we've already booted the core, so a reconnect's welcome
   // doesn't try to re-load the ROM into mGBA.
   const coreBootedRef = useRef<boolean>(false);
@@ -68,6 +87,8 @@ export function SessionPage() {
   const [muted, setMuted] = useState<boolean>(true);
   const [contributors, setContributors] = useState<Record<string, number>>({});
   const [playerName, setPlayerNameState] = useState<string>(getPlayerName());
+  // Visible speed multiplier (controller can change; followers see read-only).
+  const [multiplier, setMultiplier] = useState<number>(1);
   const { layout, pref: layoutPref, setPref: setLayoutPref } = useControlLayout();
 
   // Reflect role into refs + emulator gating.
@@ -87,34 +108,74 @@ export function SessionPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [role]);
 
+  // Follower catch-up watchdog (SPEC-SPEED §5). Every 200 ms we check
+  // whether our local frame counter has fallen too far behind the most
+  // recently received snapshot frame; if so, re-anchor.
+  useEffect(() => {
+    const iv = window.setInterval(() => {
+      if (roleRef.current !== "follower") return;
+      const core = coreRef.current;
+      if (!core || !runningRef.current) return;
+      const localFrame = core.getFrame();
+      const targetFrame = lastReceivedSnapshotFrameRef.current;
+      if (targetFrame < 0) return;
+      const deficit = targetFrame - localFrame;
+      if (deficit > DEFAULTS.CATCHUP_THRESHOLD_FRAMES) {
+        reanchorToLatestSnapshot();
+      }
+    }, 200);
+    return () => clearInterval(iv);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Frame-based snapshot cadence (SPEC-SPEED §4): emit when ≥
+  // SNAPSHOT_INTERVAL_FRAMES frames have elapsed AND ≥
+  // MIN_SNAPSHOT_INTERVAL_MS wall-clock have elapsed since the last one.
+  // The wall-clock floor caps bandwidth at 8× speed.
   const startSnapshotLoop = () => {
     stopSnapshotLoop();
-    snapshotTimerRef.current = window.setInterval(async () => {
+    const tick = async () => {
       const core = coreRef.current;
       const net = netRef.current;
-      if (!core || !net || !net.isOpen()) return;
-      if (roleRef.current !== "controller") return;
+      if (!core || !net || !net.isOpen() || roleRef.current !== "controller") {
+        // schedule another check anyway; role may flip
+        snapshotTimerRef.current = window.setTimeout(tick, 100);
+        return;
+      }
       try {
-        const bytes = await core.captureSnapshot();
-        if (!bytes) return;
         const frame = core.getFrame();
-        if (frame === lastSnapshotFrameRef.current) return;
-        lastSnapshotFrameRef.current = frame;
-        net.send({
-          type: "snapshot",
-          frame,
-          data: bytesToBase64(bytes),
-          compressed: false,
-          rawSize: bytes.length,
-        });
+        const now = performance.now();
+        const framesSince = frame - lastSnapshotFrameRef.current;
+        const msSince = now - lastSnapshotAtMsRef.current;
+        const enoughFrames = framesSince >= DEFAULTS.SNAPSHOT_INTERVAL_FRAMES;
+        const enoughMs = msSince >= DEFAULTS.MIN_SNAPSHOT_INTERVAL_MS;
+        if (enoughFrames && enoughMs && frame > lastSnapshotFrameRef.current) {
+          const bytes = await core.captureSnapshot();
+          if (bytes) {
+            lastSnapshotFrameRef.current = frame;
+            lastSnapshotAtMsRef.current = now;
+            net.send({
+              type: "snapshot",
+              frame,
+              data: bytesToBase64(bytes),
+              compressed: false,
+              rawSize: bytes.length,
+              multiplier: multiplierRef.current,
+            });
+          }
+        }
       } catch (e) {
         console.warn("snapshot loop failed:", e);
       }
-    }, DEFAULTS.SNAPSHOT_INTERVAL_MS);
+      // Poll roughly every 80 ms — granular enough to honour
+      // MIN_SNAPSHOT_INTERVAL_MS at 8× speed without burning CPU.
+      snapshotTimerRef.current = window.setTimeout(tick, 80);
+    };
+    snapshotTimerRef.current = window.setTimeout(tick, 80);
   };
   const stopSnapshotLoop = () => {
     if (snapshotTimerRef.current !== null) {
-      clearInterval(snapshotTimerRef.current);
+      clearTimeout(snapshotTimerRef.current);
       snapshotTimerRef.current = null;
     }
   };
@@ -171,7 +232,7 @@ export function SessionPage() {
     romId: string;
     romHash: string;
     romName: string;
-    latestSnapshot: { data: string; frame: number } | null;
+    latestSnapshot: { data: string; frame: number; multiplier: number } | null;
   }) => {
     if (coreBootedRef.current) return;
     coreBootedRef.current = true;
@@ -211,11 +272,14 @@ export function SessionPage() {
     }
   };
 
-  const applyServerSnapshot = async (b64: string, frame: number) => {
+  // Apply a snapshot received from the server. Aligns the follower's
+  // frame counter to the snapshot's `frame`, sets the multiplier, and
+  // drops any scheduled events the snapshot has superseded.
+  const applyServerSnapshot = async (b64: string, frame: number, msgMultiplier?: number) => {
     const core = coreRef.current;
     if (!core) return;
     if (!runningRef.current) {
-      pendingSnapshotRef.current = { data: b64, frame };
+      pendingSnapshotRef.current = { data: b64, frame, multiplier: msgMultiplier ?? 1 };
       return;
     }
     const bytes = base64ToBytes(b64);
@@ -224,6 +288,42 @@ export function SessionPage() {
       if (!ok) console.warn("restoreSnapshot returned 0 at frame", frame);
     } catch (e) {
       console.warn("restoreSnapshot threw:", e);
+    }
+    // Re-anchor the wrapper's frame counter so subsequent input/speed
+    // events tagged in controller-frame-space land correctly. Drop any
+    // pending events that the snapshot has superseded.
+    core.setFrame(frame);
+    core.clearPendingBefore(frame);
+    lastReceivedSnapshotFrameRef.current = frame;
+    // Apply the snapshot's speed if present.
+    if (typeof msgMultiplier === "number" && msgMultiplier > 0) {
+      multiplierRef.current = msgMultiplier;
+      setMultiplier(msgMultiplier);
+      core.setSpeed(msgMultiplier);
+    }
+  };
+
+  // SPEC-SPEED §5 — re-anchor a follower that has fallen too far behind.
+  const reanchorToLatestSnapshot = async () => {
+    const core = coreRef.current;
+    if (!core || !runningRef.current) return;
+    if (!pendingSnapshotRef.current && lastReceivedSnapshotFrameRef.current < 0) return;
+    // The most recent snapshot is held in pendingSnapshotRef ONLY when
+    // we couldn't apply it (paused). After resume it's already applied.
+    // For re-anchor we'd want to re-apply the latest known good
+    // snapshot — keep a copy in a ref.
+    const last = lastFullSnapshotRef.current;
+    if (!last) return;
+    console.log("[catchup] re-anchoring to snapshot frame", last.frame);
+    await applyServerSnapshot(last.data, last.frame, last.multiplier);
+    // Track re-anchor frequency for snapshot-follow mode.
+    const now = performance.now();
+    const buf = recentReanchorsRef.current;
+    buf.push(now);
+    while (buf.length && buf[0] < now - 10_000) buf.shift();
+    if (buf.length >= 3 && !snapshotFollowModeRef.current) {
+      snapshotFollowModeRef.current = true;
+      console.warn("[catchup] entering snapshot-follow mode (device can't sustain controller speed)");
     }
   };
 
@@ -236,12 +336,20 @@ export function SessionPage() {
         setControllerId(msg.controllerId);
         setSaveName(msg.saveName);
         setContributors(msg.contributors ?? {});
+        // Adopt the session's current speed (SPEC-SPEED §2). Stored
+        // on the ref now so the snapshot-bootstrap path can apply it
+        // even while the core is still paused before tap-to-start.
+        const mult = typeof msg.currentMultiplier === "number" && msg.currentMultiplier > 0 ? msg.currentMultiplier : 1;
+        multiplierRef.current = mult;
+        setMultiplier(mult);
         try {
           await ensureCoreBooted({
             romId: msg.romId,
             romHash: msg.romHash,
             romName: msg.romId.replace(/\.gba$/i, ""), // refined below
-            latestSnapshot: msg.latestSnapshot ? { data: msg.latestSnapshot.data, frame: msg.latestSnapshot.frame } : null,
+            latestSnapshot: msg.latestSnapshot
+              ? { data: msg.latestSnapshot.data, frame: msg.latestSnapshot.frame, multiplier: msg.latestSnapshot.multiplier ?? mult }
+              : null,
           });
         } catch (e: any) {
           setErr(e?.message ?? String(e));
@@ -274,8 +382,14 @@ export function SessionPage() {
         break;
       }
       case "becomeController": {
+        // Adopt the session's speed before resuming (SPEC-SPEED §2).
+        const mult = typeof msg.multiplier === "number" && msg.multiplier > 0 ? msg.multiplier : 1;
+        multiplierRef.current = mult;
+        setMultiplier(mult);
         if (msg.data) {
-          await applyServerSnapshot(msg.data, msg.frame);
+          await applyServerSnapshot(msg.data, msg.frame, mult);
+        } else if (coreRef.current) {
+          coreRef.current.setSpeed(mult);
         }
         if (selfId) setRole("controller");
         const core = coreRef.current;
@@ -290,6 +404,7 @@ export function SessionPage() {
                 data: bytesToBase64(b),
                 compressed: false,
                 rawSize: b.length,
+                multiplier: mult,
               });
             }
           } catch (e) {
@@ -299,6 +414,9 @@ export function SessionPage() {
         break;
       }
       case "input": {
+        // Apply immediately (§12.4 mode). The next snapshot reconciles
+        // any drift. Frame-precise scheduling is reserved for speed
+        // changes where exact alignment matters.
         const core = coreRef.current;
         if (!core) break;
         if (msg.pressed) core.pressButton(msg.button);
@@ -306,7 +424,27 @@ export function SessionPage() {
         break;
       }
       case "snapshot": {
-        await applyServerSnapshot(msg.data, msg.frame);
+        lastFullSnapshotRef.current = { data: msg.data, frame: msg.frame, multiplier: msg.multiplier ?? 1 };
+        await applyServerSnapshot(msg.data, msg.frame, msg.multiplier);
+        break;
+      }
+      case "speed": {
+        // Frame-tagged speed change. Schedule at the controller-frame;
+        // since the follower's wrapper-frame is aligned to the
+        // controller via snapshots, this fires at the same emulated
+        // moment on both sides.
+        const core = coreRef.current;
+        if (!core) break;
+        const apply = () => {
+          const m = msg.multiplier;
+          multiplierRef.current = m;
+          setMultiplier(m);
+          core.setSpeed(m);
+        };
+        // If the local frame counter has already passed msg.frame, apply
+        // immediately — better to apply late than not at all.
+        if (core.getFrame() >= msg.frame) apply();
+        else core.onFrame(msg.frame, apply);
         break;
       }
       case "contributors": {
@@ -334,7 +472,11 @@ export function SessionPage() {
     if (pendingSnapshotRef.current) {
       const p = pendingSnapshotRef.current;
       pendingSnapshotRef.current = null;
-      await applyServerSnapshot(p.data, p.frame);
+      await applyServerSnapshot(p.data, p.frame, p.multiplier);
+    } else {
+      // No snapshot to bootstrap from — still apply the session's
+      // current multiplier so a fresh save starts at the right speed.
+      core.setSpeed(multiplierRef.current);
     }
     if (roleRef.current === "controller") startSnapshotLoop();
   };
@@ -353,6 +495,24 @@ export function SessionPage() {
     mutedRef.current = next;
     setMuted(next);
     coreRef.current?.setVolume(next ? 0 : 1);
+  };
+
+  // Controller-only: cycle through the speed ladder. Apply locally at
+  // the current frame AND send a frame-tagged speed event so followers
+  // change speed at the same emulated point (SPEC-SPEED §1).
+  const cycleSpeed = () => {
+    if (roleRef.current !== "controller") return;
+    const core = coreRef.current;
+    const net = netRef.current;
+    if (!core) return;
+    const next = nextLadderSpeed(multiplierRef.current);
+    multiplierRef.current = next;
+    setMultiplier(next);
+    core.setSpeed(next);
+    const frame = core.getFrame();
+    if (net?.isOpen()) {
+      net.send({ type: "speed", frame, multiplier: next });
+    }
   };
 
   // ----- needs-name gate: render BEFORE booting WS so we can collect a name -----
@@ -424,6 +584,24 @@ export function SessionPage() {
           </span>
         </div>
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          {isController ? (
+            <button
+              onClick={cycleSpeed}
+              data-testid="speed-cycle"
+              title={`Speed (${multiplier}×) — tap to cycle ${SPEED_LADDER.join("×→")}×`}
+              className={multiplier > 1 ? "speed-btn speed-btn-on" : "speed-btn"}
+            >
+              {multiplier}×
+            </button>
+          ) : (
+            <span
+              data-testid="speed-readonly"
+              className={multiplier > 1 ? "speed-pill speed-pill-on" : "speed-pill"}
+              title={`Speed: ${multiplier}×`}
+            >
+              {multiplier}×
+            </span>
+          )}
           <button onClick={toggleMute} data-testid="mute-toggle" title={muted ? "Unmute" : "Mute"}
                   style={{ display: "inline-flex", alignItems: "center" }}>
             {muted ? <IconMuted size={14} /> : <IconUnmuted size={14} />}

@@ -41,6 +41,8 @@ export interface SnapshotMeta {
   compressed: boolean;
   // bytes-length of the underlying state file before compression/base64
   rawSize: number;
+  // Emulation speed at capture time (SPEC-SPEED §4).
+  multiplier: number;
 }
 
 // ---- Client → Server ----
@@ -68,6 +70,18 @@ export interface ClientSnapshotMsg {
   data: string;
   compressed: boolean;
   rawSize: number;
+  // Speed at which the snapshot was captured. Followers bootstrapping
+  // from this snapshot adopt this multiplier so they don't run at the
+  // wrong rate after a load (SPEC-SPEED §2).
+  multiplier: number;
+}
+
+// Controller-emitted speed change. Frame-tagged so followers apply it at
+// the same emulated frame (SPEC-SPEED §1).
+export interface ClientSpeedMsg {
+  type: "speed";
+  frame: number;
+  multiplier: number;
 }
 
 export interface HeartbeatMsg {
@@ -82,6 +96,7 @@ export type ClientMsg =
   | JoinMsg
   | ClientInputMsg
   | ClientSnapshotMsg
+  | ClientSpeedMsg
   | HeartbeatMsg
   | LeaveMsg;
 
@@ -99,6 +114,9 @@ export interface WelcomeMsg {
   romId: string;
   romHash: string;
   contributors: Record<string, number>; // playerName → totalControllerMs
+  // Current synchronized emulation speed (SPEC-SPEED §2). New joiners
+  // adopt this so they don't run at 1× while the controller is at 4×.
+  currentMultiplier: number;
 }
 
 export interface RosterMsg {
@@ -120,6 +138,9 @@ export interface ServerSnapshotMsg {
   data: string;
   compressed: boolean;
   rawSize: number;
+  // Speed at which the controller captured this snapshot. Followers
+  // adopt this multiplier when applying the snapshot.
+  multiplier: number;
 }
 
 export interface BecomeControllerMsg {
@@ -128,6 +149,16 @@ export interface BecomeControllerMsg {
   data: string;
   compressed: boolean;
   rawSize: number;
+  // The session's current speed (SPEC-SPEED §2). The new controller
+  // adopts it after loadState, before resuming.
+  multiplier: number;
+}
+
+// Relayed from controller to followers.
+export interface ServerSpeedMsg {
+  type: "speed";
+  frame: number;
+  multiplier: number;
 }
 
 export interface ControllerChangedMsg {
@@ -158,6 +189,7 @@ export type ServerMsg =
   | RosterMsg
   | ServerInputMsg
   | ServerSnapshotMsg
+  | ServerSpeedMsg
   | BecomeControllerMsg
   | ControllerChangedMsg
   | HeartbeatAckMsg
@@ -195,11 +227,33 @@ export interface CreateSaveResponse {
   save: SaveSummary;
 }
 
-// ---- Tunables (SPEC §17) ----
+// ---- Tunables (SPEC §17 + SPEC-SPEED §8) ----
 export const DEFAULTS = {
+  // Wall-clock cadence — kept only as 1×-baseline documentation since
+  // M3; SPEC-SPEED makes the primary trigger frame-based.
   SNAPSHOT_INTERVAL_MS: 1500,
+  // Floor on wall-clock between snapshots so that at 8× we don't spam
+  // the WebSocket (SPEC-SPEED §4).
+  MIN_SNAPSHOT_INTERVAL_MS: 300,
+  // Primary snapshot trigger — emit at least this many emulated frames
+  // since the last snapshot (SPEC-SPEED §4). 90 frames ≈ 1.5 s at 1×.
+  SNAPSHOT_INTERVAL_FRAMES: 90,
   FOLLOWER_DELAY_MS: 120,
   HEARTBEAT_INTERVAL_MS: 3000,
   HEARTBEAT_TIMEOUT_MS: 10000,
   RECONCILE_MODE: "hash" as "hash" | "always",
+  // If a follower's targetFrame - localFrame exceeds this many frames,
+  // it re-anchors (loadState + drop stale scheduled events). SPEC-SPEED §5.
+  CATCHUP_THRESHOLD_FRAMES: 180,
 } as const;
+
+// Allowed multipliers cycle for the controller's speed button. mGBA's
+// `setFastForwardMultiplier` supports arbitrary ≥1 (and negative for
+// slow-down). [1, 2, 4, 8] is the user-visible default ladder.
+export const SPEED_LADDER: readonly number[] = [1, 2, 4, 8] as const;
+
+export function nextLadderSpeed(current: number): number {
+  const i = SPEED_LADDER.indexOf(current);
+  if (i < 0) return SPEED_LADDER[0];
+  return SPEED_LADDER[(i + 1) % SPEED_LADDER.length];
+}

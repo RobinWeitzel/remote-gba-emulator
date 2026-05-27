@@ -85,6 +85,70 @@ Verified end-to-end with the Playwright two-tab test:
 - TabB's gamepad is visually disabled (follower).
 - Closing TabA: TabB becomes controller via `becomeController`, gamepad re-enables, emulator continues running with the same on-screen state. Roster drops to 1.
 
+## Milestone S — Synchronized speed control (SPEC-SPEED.md)
+- Status: **DONE** (2026-05-27)
+
+Per SPEC-SPEED.md: controller and followers all run at the same elevated
+speed, kept frame-aligned by treating speed changes as frame-tagged events
+(analogous to inputs).
+
+Implemented:
+- **Wrapper:** `MgbaCore.setSpeed(n)` maps directly onto the verified
+  `Module.setFastForwardMultiplier(n)` (1=normal, >1 = ×N fast-forward,
+  <0 = 1/|n| slow-down). Confirmed the API from `/client/public/emulator/mgba.d.ts`
+  before implementing.
+- **Frame alignment:** added `setFrame(n)` and `clearPendingBefore(n)` on the
+  wrapper. Followers call `setFrame(snapshot.frame)` after every applied
+  snapshot so their JS-side counter tracks the controller's frame-space.
+  That alignment is what makes frame-tagged speed events fire at the same
+  emulated moment on both sides.
+- **Protocol:** new `speed { frame, multiplier }` message (C→S→F). Added
+  `multiplier` to `ServerSnapshotMsg`, `ClientSnapshotMsg`,
+  `BecomeControllerMsg`, `SnapshotMeta`. Added `currentMultiplier` to
+  `WelcomeMsg`. Server stores `Session.currentMultiplier` (default 1),
+  validates incoming `speed` against `SPEED_LADDER`, relays to followers,
+  and stamps the multiplier onto every outbound snapshot + welcome +
+  becomeController.
+- **Config:** `SPEED_LADDER = [1,2,4,8]`, `SNAPSHOT_INTERVAL_FRAMES = 90`,
+  `MIN_SNAPSHOT_INTERVAL_MS = 300`, `CATCHUP_THRESHOLD_FRAMES = 180`.
+  Exposed `nextLadderSpeed(current)` helper.
+- **Controller UI:** a speed-cycle button in the play header that cycles
+  the ladder. On click: `core.setSpeed(n)` locally + send
+  `{type:'speed', frame: core.getFrame(), multiplier: n}`.
+- **Follower UI:** read-only speed pill in the same slot. Adopts the
+  multiplier from `welcome.currentMultiplier`, from each snapshot's
+  `multiplier`, and from `becomeController.multiplier`. Scheduled
+  `speed` events via `core.onFrame(frame, applySpeed)` so the change
+  lands at the controller-tagged frame, not on wall-clock arrival.
+- **Frame-based snapshot cadence:** controller's snapshot loop now polls
+  every ~80ms and emits when *both* (frames-since-last ≥ 90) and
+  (ms-since-last ≥ 300) are true. At 1× this stays at ~1.5s cadence; at
+  8× it drops to the ~300ms wall-clock floor so reconciliation keeps
+  pace with the multiplied frame production.
+- **Catch-up safety net:** a watchdog interval on the follower
+  recomputes `targetFrame - localFrame` every 200ms. If the deficit
+  exceeds `CATCHUP_THRESHOLD_FRAMES` (180), it re-anchors to the last
+  received snapshot (`applyServerSnapshot` → `loadAutoSaveState` +
+  `setFrame` + `clearPendingBefore`). Three or more re-anchors within
+  10 seconds flip the follower into "snapshot-follow mode" (logged to
+  console; no UI noise) until the controller eases off.
+
+Verified end-to-end in Playwright with two tabs on the same save:
+- Controller cycle 1× → 2× → 4× → 8× → 1×; follower mirrored every step.
+- Late-join into a 4× session: new follower picked up 4× from welcome.
+- Closed the controller while at 4×: the next-in-queue was promoted via
+  `becomeController` and inherited 4× directly.
+- A capable follower stays in lockstep through speed cycles; the
+  catch-up watchdog never fires for a sustainable speed.
+
+Notes:
+- Followers are muted by default (SPEC C7) so pitched-up audio at high
+  speed is a non-issue for them. Controllers keep audio on; chipmunk
+  audio at 4×/8× is accepted as a known tradeoff (SPEC-SPEED §9).
+- mGBA supports arbitrary multipliers so the full `[1,2,4,8]` ladder is
+  available; no need to trim. 0.5× slow-mo would map to
+  `setFastForwardMultiplier(-2)` but is not in the v1 ladder.
+
 ## Milestone 4 — Robustness, mobile polish, prod build
 - Status: **DONE** (2026-05-27)
 

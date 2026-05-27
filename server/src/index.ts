@@ -21,6 +21,7 @@ import { SessionStore } from "./sessions.js";
 import { SaveStore, type SaveMeta } from "./saves.js";
 import {
   DEFAULTS,
+  SPEED_LADDER,
   type ClientMsg,
   type ServerMsg,
   type WelcomeMsg,
@@ -260,6 +261,7 @@ async function handleMessage(aux: SocketAux, msg: ClientMsg) {
             data: Buffer.from(bytes).toString("base64"),
             compressed: false,
             rawSize: bytes.length,
+            multiplier: 1, // saves resume at 1× on cold boot
             receivedAt: Date.now(),
           };
         }
@@ -277,6 +279,7 @@ async function handleMessage(aux: SocketAux, msg: ClientMsg) {
         romId: meta.romId,
         romHash: meta.romHash,
         contributors: { ...meta.contributors },
+        currentMultiplier: session.currentMultiplier,
       };
       send(aux.connId, welcome);
       broadcast(msg.saveId, rosterMsg(msg.saveId), aux.connId);
@@ -303,11 +306,17 @@ async function handleMessage(aux: SocketAux, msg: ClientMsg) {
       const s = aux.saveId ? sessions.get(aux.saveId) : null;
       if (!s) return;
       if (!sessions.isController(s, aux.connId)) return;
+      // The controller stamps the snapshot with its current multiplier;
+      // we trust it. (We could cross-check against session.currentMultiplier
+      // but the controller is the source of truth for what it just
+      // captured at.)
+      const multiplier = msg.multiplier ?? s.currentMultiplier ?? 1;
       sessions.setSnapshot(s, {
         frame: msg.frame,
         data: msg.data,
         compressed: msg.compressed,
         rawSize: msg.rawSize,
+        multiplier,
       });
       // Persist bytes to disk + flush controller wall-time into contributors.
       try {
@@ -323,7 +332,23 @@ async function handleMessage(aux: SocketAux, msg: ClientMsg) {
         data: msg.data,
         compressed: msg.compressed,
         rawSize: msg.rawSize,
+        multiplier,
       };
+      broadcast(aux.saveId!, out, aux.connId);
+      return;
+    }
+    case "speed": {
+      const s = aux.saveId ? sessions.get(aux.saveId) : null;
+      if (!s) return;
+      if (!sessions.isController(s, aux.connId)) return;
+      // Validate against the configured ladder so a bad client can't
+      // push us to an unsupported core multiplier.
+      if (!SPEED_LADDER.includes(msg.multiplier)) {
+        sendError(aux.connId, "bad_speed", `multiplier ${msg.multiplier} not in ladder`);
+        return;
+      }
+      s.currentMultiplier = msg.multiplier;
+      const out: ServerMsg = { type: "speed", frame: msg.frame, multiplier: msg.multiplier };
       broadcast(aux.saveId!, out, aux.connId);
       return;
     }
@@ -363,8 +388,8 @@ async function handleLeave(aux: SocketAux) {
   if (wasController && newControllerId) {
     const snap = session.latestSnapshot;
     const msg: BecomeControllerMsg = snap
-      ? { type: "becomeController", frame: snap.frame, data: snap.data, compressed: snap.compressed, rawSize: snap.rawSize }
-      : { type: "becomeController", frame: 0, data: "", compressed: false, rawSize: 0 };
+      ? { type: "becomeController", frame: snap.frame, data: snap.data, compressed: snap.compressed, rawSize: snap.rawSize, multiplier: session.currentMultiplier }
+      : { type: "becomeController", frame: 0, data: "", compressed: false, rawSize: 0, multiplier: session.currentMultiplier };
     send(newControllerId, msg);
     const cc: ControllerChangedMsg = { type: "controllerChanged", controllerId: newControllerId };
     broadcast(sid, cc);

@@ -15,10 +15,20 @@ export interface MgbaCore {
   // Frame counter — incremented by videoFrameEndedCallback.
   getFrame(): number;
 
+  // Re-anchor the JS-side frame counter to align with a controller-side
+  // frame number (used by followers after applying a snapshot). The
+  // counter then continues to increment from `n` as the core advances.
+  setFrame(n: number): void;
+
   // Schedule a callback to fire when the emulator reaches `frame`. Inputs
   // applied this way land at deterministic frame boundaries; do NOT inject
   // inputs via wall-clock polling — that loses sync.
   onFrame(frame: number, cb: () => void): void;
+
+  // Drop any pending onFrame callbacks scheduled for frames ≤ `n`. Used
+  // by the follower after a snapshot apply to discard stale events that
+  // the snapshot has already superseded (SPEC-SPEED §5).
+  clearPendingBefore(n: number): void;
 
   pressButton(b: GbaButton): void;
   releaseButton(b: GbaButton): void;
@@ -34,6 +44,13 @@ export interface MgbaCore {
   restoreSnapshot(bytes: Uint8Array): Promise<boolean>;
 
   setVolume(v: number): void;
+
+  // Synchronized emulation speed (SPEC-SPEED §3). The argument is the
+  // ladder multiplier (1, 2, 4, 8). Mapped onto mGBA's verified
+  // `setFastForwardMultiplier`: 1=normal, >1 = fast-forward ×N, <0 = slow
+  // down (1/abs). We pass the multiplier directly for N≥1; for the
+  // optional 0.5× ladder entry, callers should pass -2.
+  setSpeed(multiplier: number): void;
 
   dispose(): void;
 }
@@ -93,6 +110,9 @@ export async function createMgba(canvas: HTMLCanvasElement): Promise<MgbaCore> {
     getFrame() {
       return frame;
     },
+    setFrame(n) {
+      frame = n;
+    },
     onFrame(targetFrame, cb) {
       if (frame >= targetFrame) {
         // Already passed — fire next microtask.
@@ -103,6 +123,12 @@ export async function createMgba(canvas: HTMLCanvasElement): Promise<MgbaCore> {
       let i = pending.length;
       while (i > 0 && pending[i - 1].frame > targetFrame) i--;
       pending.splice(i, 0, { frame: targetFrame, cb });
+    },
+    clearPendingBefore(n) {
+      // pending is sorted ascending; drop everything with frame ≤ n.
+      let i = 0;
+      while (i < pending.length && pending[i].frame <= n) i++;
+      if (i > 0) pending.splice(0, i);
     },
     pressButton(b) {
       Module.buttonPress(b);
@@ -157,6 +183,15 @@ export async function createMgba(canvas: HTMLCanvasElement): Promise<MgbaCore> {
     },
     setVolume(v) {
       Module.setVolume(v);
+    },
+    setSpeed(multiplier) {
+      // mGBA: 1=normal, >1 = ×N fast-forward, <0 = 1/|N| slow-down.
+      // Our ladder is [1, 2, 4, 8] for now; sub-1× would pass -2 etc.
+      try {
+        Module.setFastForwardMultiplier(multiplier);
+      } catch (e) {
+        console.warn("setFastForwardMultiplier failed:", e);
+      }
     },
     dispose() {
       try {
