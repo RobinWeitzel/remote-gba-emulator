@@ -9,6 +9,9 @@ build/
 coverage/
 .playwright-mcp/
 *.png
+# PWA install icons — raster fallbacks needed for Android Chrome's install
+# check (it ignores SVG-only manifest icons).
+!/client/public/icons/*.png
 
 # ROMs (user-supplied real ROMs go here, not committed). Test ROM is whitelisted below.
 /server/roms/*
