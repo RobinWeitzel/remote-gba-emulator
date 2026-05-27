@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <!-- Same indigo→green gradient as the in-app brand mark.
+       Original work, generated for this project, no third-party
+       trademarks or sourced art. -->
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%"   stop-color="#8b7cf6"/>
+      <stop offset="100%" stop-color="#2ea866"/>
+    </linearGradient>
+  </defs>
+  <!-- Filled rounded-square tile (not maskable; this is for browser-tab
+       favicon use, where padding-for-safe-area just wastes pixels). -->
+  <rect width="32" height="32" rx="7" fill="url(#g)"/>
+  <!-- Gamepad glyph scaled to fill the inner area (~75% of the tile). -->
+  <g transform="translate(4 4)"
+     fill="none" stroke="#ffffff"
+     stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="2" y="7" width="20" height="11" rx="3"/>
+    <!-- D-pad cross -->
+    <line x1="7"   y1="10.5" x2="7"   y2="14.5"/>
+    <line x1="5"   y1="12.5" x2="9"   y2="12.5"/>
+    <!-- Face buttons -->
+    <circle cx="16" cy="11.5" r="1.2" fill="#ffffff" stroke="none"/>
+    <circle cx="18.5" cy="13.5" r="1.2" fill="#ffffff" stroke="none"/>
+  </g>
+</svg>

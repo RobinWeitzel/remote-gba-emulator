@@ -18,8 +18,11 @@
     <meta name="apple-mobile-web-app-title" content="Play GBA" />
     <link rel="apple-touch-icon" href="/icons/icon.svg" />
 
-    <!-- Generic favicon. -->
-    <link rel="icon" type="image/svg+xml" href="/icons/icon.svg" />
+    <!-- Browser-tab favicon. icon.svg is sized for Android adaptive-icon
+         masking (lots of safe-area padding) which looks weak at 16×16;
+         favicon.svg fills the tile so the gamepad reads clearly. -->
+    <link rel="icon" type="image/svg+xml" href="/icons/favicon.svg" />
+    <link rel="mask-icon" href="/icons/favicon.svg" color="#2ea866" />
 
     <style>
       html, body, #root { margin: 0; padding: 0; height: 100%; background: #0c0c14; color: #f1f1f7; font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
