@@ -86,4 +86,20 @@ Verified end-to-end with the Playwright two-tab test:
 - Closing TabA: TabB becomes controller via `becomeController`, gamepad re-enables, emulator continues running with the same on-screen state. Roster drops to 1.
 
 ## Milestone 4 — Robustness, mobile polish, prod build
-- Status: pending
+- Status: **DONE** (2026-05-27)
+
+Implemented:
+- **WebSocket reconnect** (already in M2 via `client/src/net/ws.ts`): exponential backoff to 8 s + jitter; on reconnect, the join message is replayed so the server re-adds the participant.
+- **pagehide cleanup** (`SessionPage`): sends `leave` and releases the wake lock; the next-in-queue is promoted immediately rather than waiting for the heartbeat timeout.
+- **ROM hash mismatch guard:** enforced on the server's `join` handler (returns `error { code: "rom_mismatch" }`) AND on the client before booting the emulator (compares fetched bytes' SHA-256 against `/api/roms` metadata, throws before `loadGame`).
+- **In-control indicator:** header role chip + faded `.gamepad-disabled` styling for followers (already in M2).
+- **Tap-to-start overlay** unlocks audio, requests fullscreen, locks landscape, and acquires the wake lock (already in M1; carried into SessionPage).
+- **Mute toggle:** 🔇/🔊 in the header. Followers default-muted (SPEC C7).
+- **Production build:** `npm run build` produces `/client/dist/` and typechecks the server. `npm start` runs the server via `tsx` (no compile step needed); it serves the built client + WS hub on port 8080. **Verified** in browser that `crossOriginIsolated === true` on the prod server and that `/s/<id>?rom=<id>` end-to-end works (load → tap-to-start → emulator running).
+- **README** documents dev, prod, ROM placement, regen of the vendored core, and a "behind Cloudflare Tunnel" deploy section — including the critical caveat that Cloudflare must pass COOP/COEP through unmodified.
+
+Production smoke test (Playwright, against `npm start` on port 8080):
+- `GET /` returns COOP/COEP/CORP/noindex headers.
+- `GET /api/roms` returns COOP/COEP/CORP/noindex headers.
+- `crossOriginIsolated === true`, `SharedArrayBuffer` is available.
+- `/s/m4test?rom=test-arm.gba` loads the SPA fallback, boots mGBA, renders the test ROM output.

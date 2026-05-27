@@ -66,7 +66,8 @@ async function fetchRom(romId: string): Promise<{ bytes: Uint8Array; expectedHas
   const list = await fetch("/api/roms").then((r) => r.json());
   const meta = list.roms.find((r: any) => r.id === romId);
   if (!meta) throw new Error(`ROM ${romId} not found in /api/roms`);
-  const bytes = new Uint8Array(await fetch(`/api/roms/${romId}`).then((r) => r.arrayBuffer()));
+  const ab = await fetch(`/api/roms/${romId}`).then((r) => r.arrayBuffer());
+  const bytes = new Uint8Array(ab as ArrayBuffer);
   return { bytes, expectedHash: meta.hash };
 }
 

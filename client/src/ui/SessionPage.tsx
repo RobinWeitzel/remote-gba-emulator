@@ -168,8 +168,19 @@ export function SessionPage() {
       }
     })();
 
+    // Mobile cleanup: pagehide is the reliable signal on Android Chrome
+    // and iOS Safari (beforeunload is not). Send `leave` and release wake
+    // lock so the next-in-queue gets promoted without waiting for the
+    // heartbeat timeout.
+    const onPageHide = () => {
+      try { netRef.current?.close(); } catch { /* ignore */ }
+      try { wakeRef.current?.release(); } catch { /* ignore */ }
+    };
+    window.addEventListener("pagehide", onPageHide);
+
     return () => {
       disposed = true;
+      window.removeEventListener("pagehide", onPageHide);
       stopSnapshotLoop();
       try { netRef.current?.close(); } catch { /* ignore */ }
       try { wakeRef.current?.release(); } catch { /* ignore */ }

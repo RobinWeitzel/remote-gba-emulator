@@ -28,8 +28,9 @@ const HOST = process.env.HOST ?? "0.0.0.0";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// /server/dist/index.js  → ../../client/dist  (prod)
-// /server/src/index.ts   → ../../client/dist  (dev, but Vite serves the client)
+// We run tsx directly in both dev and prod, so __dirname is always
+// /server/src/. The client built output lives at /client/dist; ROMs at
+// /server/roms.
 const CLIENT_DIST = path.resolve(__dirname, "../../client/dist");
 const ROMS_DIR = path.resolve(__dirname, "../roms");
 
@@ -269,19 +270,26 @@ function cryptoRandom(): string {
 }
 
 // Static client serving (only useful in prod after `npm run build`).
+import fs from "node:fs";
 try {
   // Will throw if /client/dist doesn't exist (dev), which is fine.
   await app.register(fastifyStatic, {
     root: CLIENT_DIST,
-    decorateReply: false,
   });
+  const indexHtml = fs.readFileSync(path.join(CLIENT_DIST, "index.html"), "utf8");
   // SPA fallback — any unknown route serves index.html, EXCEPT /api/* and /ws.
   app.setNotFoundHandler((req, reply) => {
     if (req.url.startsWith("/api/") || req.url.startsWith("/ws")) {
       reply.code(404).send("not found");
       return;
     }
-    reply.type("text/html").sendFile("index.html");
+    // Don't serve index.html for asset-looking paths — return a real 404
+    // so missing favicons/icons don't look like the SPA.
+    if (/\.(ico|png|jpg|jpeg|gif|svg|webp|map|js|css|wasm)$/i.test(req.url.split("?")[0])) {
+      reply.code(404).send("not found");
+      return;
+    }
+    reply.type("text/html").send(indexHtml);
   });
 } catch (e: any) {
   app.log.warn({ err: e?.message }, "static client not available (dev mode is fine)");
