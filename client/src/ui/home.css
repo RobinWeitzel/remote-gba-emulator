@@ -34,13 +34,27 @@
 
 .save-card-v2 {
   display: flex; flex-direction: column;
-  height: min(64dvh, calc(100dvh - 200px));
+  height: min(64dvh, calc(100dvh - 140px));
   border-radius: var(--r-xl);
   padding: 18px;
   color: var(--fg);
   box-shadow: var(--sh-3);
   position: relative;
   overflow: hidden;
+}
+
+/* Landscape: a phone in landscape gives us very little vertical room. Tighten
+   the card so title + meta + Play still fit; hide contributors to reclaim
+   space (still visible in the per-save action sheet). */
+@media (orientation: landscape) and (max-height: 500px) {
+  .save-card-v2 {
+    height: calc(100dvh - 100px);
+    padding: 14px;
+  }
+  .save-card-v2 .title { font-size: 20px; margin: 6px 0 4px; }
+  .save-card-v2 .meta { font-size: 12px; }
+  .save-card-v2 .contribs { display: none; }
+  .save-card-v2 .play-cta { padding: 10px; font-size: 15px; }
 }
 .save-card-v2 .rom-chip {
   align-self: flex-start;

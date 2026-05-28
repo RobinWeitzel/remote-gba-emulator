@@ -21,11 +21,13 @@
   touch-action: none;
   transform: translate3d(0, 0, 0);
   transition: transform var(--dur-sheet) var(--ease-app);
+  display: flex; flex-direction: column;
 }
 .app-sheet[data-dragging="true"] { transition: none; }
 
 .app-sheet-handle {
   display: flex; justify-content: center; padding: 8px 0 4px;
+  flex-shrink: 0;
 }
 .app-sheet-handle::before {
   content: ""; width: 36px; height: 4px;
@@ -33,7 +35,12 @@
   border-radius: 99px;
 }
 
-.app-sheet-content { padding: 4px 16px 20px; }
+.app-sheet-content {
+  padding: 4px 16px 20px;
+  flex: 1; min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
 
 .app-action-sheet { padding: 0 0 8px; }
 .app-action-sheet h3 { margin: 4px 16px 12px; font-size: 14px; color: var(--fg-muted); font-weight: 600; }
