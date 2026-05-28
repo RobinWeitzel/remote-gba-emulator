@@ -20,12 +20,14 @@
 }
 .play-canvas-v2 {
   display: block;
-  max-width: 100%; max-height: 100%;
-  width: auto; height: auto;
+  width: 100%; height: 100%;
+  /* object-fit:contain keeps the 240:160 GBA aspect ratio while letting the
+     canvas display element fill its container — black bars on whichever axis
+     hits its limit first. */
+  object-fit: contain;
   image-rendering: pixelated;
   background: #000;
   border-radius: 6px;
-  box-shadow: var(--sh-2);
 }
 
 /* === Layout positioning for .play-shell-v2 ===
@@ -52,10 +54,13 @@
 }
 .play-shell-v2[data-layout="stacked"] .pad-panel { flex: 1; min-width: 0; }
 
-/* Flanking: pads flank the canvas on the left and right. */
+/* Flanking: pads flank the canvas on the left and right. Reserve just
+   enough room (160px) for the widest button — the 132px-wide D-pad plus
+   the pad-panel's own padding. Anything more shrinks the canvas pointlessly. */
 .play-shell-v2[data-layout="flanking"] .play-canvas-wrap-v2 {
-  padding-left:  max(120px, calc(var(--safe-left) + 120px));
-  padding-right: max(120px, calc(var(--safe-right) + 120px));
+  padding-left:  max(160px, calc(var(--safe-left) + 160px));
+  padding-right: max(160px, calc(var(--safe-right) + 160px));
+  padding-bottom: 60px; /* peek sheet ~56px */
 }
 .play-shell-v2[data-layout="flanking"] .pad-panel {
   position: fixed;
@@ -65,7 +70,11 @@
 .play-shell-v2[data-layout="flanking"] .pad-panel-left  { left:  max(8px, var(--safe-left)); }
 .play-shell-v2[data-layout="flanking"] .pad-panel-right { right: max(8px, var(--safe-right)); }
 
-/* Overlay: pads are absolutely positioned, translucent, at the bottom corners. */
+/* Overlay: canvas fills the shell; pads are translucent over the bottom
+   corners. Pad-bottom only reserves space for the peek sheet. */
+.play-shell-v2[data-layout="overlay"] .play-canvas-wrap-v2 {
+  padding: calc(var(--safe-top) + 4px) calc(var(--safe-right) + 4px) 60px calc(var(--safe-left) + 4px);
+}
 .play-shell-v2[data-layout="overlay"] .pad-panel {
   position: fixed;
   bottom: 88px; /* above the peek sheet (~56px) plus breathing room */
