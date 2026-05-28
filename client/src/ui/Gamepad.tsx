@@ -8,13 +8,16 @@
 // care which layout is active.
 
 import { useEffect, useRef } from "react";
+import type { CSSProperties } from "react";
 import type { GbaButton } from "@gba/shared";
+import type { OrientationLayout } from "../lib/settings";
 
 interface Props {
   onPress: (b: GbaButton) => void;
   onRelease: (b: GbaButton) => void;
   // If true, the controls are visible but inert (follower mode).
   disabled?: boolean;
+  buttonLayout?: OrientationLayout | null;
 }
 
 function attachButton(
@@ -140,7 +143,7 @@ const KEY_MAP: Record<string, GbaButton> = {
   Enter: "Start", Backspace: "Select", ShiftRight: "Select",
 };
 
-export function Gamepad({ onPress, onRelease, disabled }: Props) {
+export function Gamepad({ onPress, onRelease, disabled, buttonLayout }: Props) {
   const dpadRef = useRef<HTMLDivElement | null>(null);
   const aRef = useRef<HTMLButtonElement | null>(null);
   const bRef = useRef<HTMLButtonElement | null>(null);
@@ -224,8 +227,19 @@ export function Gamepad({ onPress, onRelease, disabled }: Props) {
 
   const disabledCls = disabled ? " pad-disabled" : "";
 
+  const cssVars: CSSProperties = buttonLayout
+    ? Object.assign(
+        { ["--pad-opacity"]: buttonLayout.opacity } as Record<string, unknown>,
+        ...Object.entries(buttonLayout.buttons).map(([id, p]) => ({
+          [`--btn-${id}-x`]: `${p.x}%`,
+          [`--btn-${id}-y`]: `${p.y}%`,
+          [`--btn-${id}-size`]: p.size,
+        })),
+      ) as CSSProperties
+    : {};
+
   return (
-    <>
+    <div className="pad-host" style={cssVars} data-custom={buttonLayout ? "true" : undefined}>
       <div className={`pad-panel pad-panel-left${disabledCls}`} aria-hidden={disabled}>
         <button ref={lRef} className="pad-btn pad-shoulder">L</button>
         <div ref={dpadRef} className="pad-dpad" aria-label="D-pad">
@@ -246,6 +260,6 @@ export function Gamepad({ onPress, onRelease, disabled }: Props) {
         </div>
         <button ref={startRef} className="pad-btn pad-pill">START</button>
       </div>
-    </>
+    </div>
   );
 }

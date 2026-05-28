@@ -1208,3 +1208,13 @@ input:focus, select:focus, button:focus-visible {
   width: 14px;
   display: inline-block;
 }
+
+/* Custom button layout plumbing. M4.4 just adds the host wrapper.
+   M5 will add absolute-positioning rules for [data-custom="true"]. */
+.pad-host { display: contents; }
+.pad-host[data-custom="true"] {
+  /* When a custom layout is applied, today's [data-layout] rules will be
+     overridden by per-button positioning in M5. For now, when data-custom
+     is "true", we still render via display:contents so M5 just adds the
+     absolute-positioning rules without breaking M4's preview. */
+}

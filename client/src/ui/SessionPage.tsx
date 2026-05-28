@@ -21,7 +21,7 @@ import { navigate, useRoute } from "../lib/router";
 import { connect, wsUrl, type NetHandle } from "../net/ws";
 import { bytesToBase64, base64ToBytes } from "../lib/b64";
 import { getPlayerName, setPlayerName } from "../lib/player";
-import { effectiveControlLayout, loadGlobal, useOrientation, type ControlLayout } from "../lib/settings";
+import { effectiveControlLayout, loadGlobal, useOrientation, useResolvedSettings, type ControlLayout } from "../lib/settings";
 import { gradientForName } from "../lib/gradient";
 import { Modal, StatusPill } from "./primitives";
 import { InGameSheet } from "./InGameSheet";
@@ -104,6 +104,10 @@ export function SessionPage() {
   // Visible speed multiplier (controller can change; followers see read-only).
   const [multiplier, setMultiplier] = useState<number>(1);
   const isLandscape = useOrientation();
+  const resolvedSettings = useResolvedSettings(romId || null);
+  const orientationLayout = resolvedSettings.buttonLayout
+    ? (isLandscape ? resolvedSettings.buttonLayout.orientations.landscape : resolvedSettings.buttonLayout.orientations.portrait)
+    : null;
   const [layoutPref, setLayoutPref] = useState<ControlLayout | null>(() => {
     const g = loadGlobal();
     return g.controlLayout === "auto" ? null : g.controlLayout;
@@ -606,6 +610,7 @@ export function SessionPage() {
           if (roleRef.current === "controller") netRef.current?.send({ type: "input", frame: c.getFrame(), button: b, pressed: false });
         }}
         disabled={!isController}
+        buttonLayout={orientationLayout}
       />
 
       {connState !== "open" && status === "running" && (
