@@ -9,7 +9,7 @@ import { Prompt, SegmentedControl, ActionSheet, type ActionItem } from "./primit
 import { IconBack } from "./icons";
 
 export function SettingsPage() {
-  const { settings, patch } = useGlobalSettings();
+  const { settings, patch, refresh } = useGlobalSettings();
   const [name, setName] = useState<string>(getPlayerName());
   const [editingName, setEditingName] = useState(false);
   const [saves, setSaves] = useState<SaveSummary[]>([]);
@@ -18,6 +18,11 @@ export function SettingsPage() {
 
   const refreshSaves = () => listSaves().then(setSaves).catch(() => {});
   useEffect(() => { refreshSaves(); }, []);
+  useEffect(() => {
+    const onPop = () => refresh();
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, [refresh]);
   const archived = saves.filter((s) => s.archived);
 
   const commitName = (n: string) => {
