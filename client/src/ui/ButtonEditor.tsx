@@ -200,14 +200,18 @@ function EditorCanvas({
     if (!wrap) return;
     try { (e.target as Element).setPointerCapture?.(e.pointerId); } catch { /* ignore */ }
     const rect = wrap.getBoundingClientRect();
-    const shortAxis = Math.min(rect.width, rect.height);
+    // The button is positioned via `left: X%` (resolved against parent width)
+    // and `top: Y%` (resolved against parent height), so each axis's delta
+    // needs its own dimension as the divisor. Using shortAxis for both made
+    // horizontal drags in landscape feel "accelerated" (moving the button by
+    // ~width/height × the finger's travel).
     const startX = e.clientX;
     const startY = e.clientY;
     const start = layout.buttons[id];
 
     const move = (ev: PointerEvent) => {
-      const dxPct = ((ev.clientX - startX) / shortAxis) * 100;
-      const dyPct = ((ev.clientY - startY) / shortAxis) * 100;
+      const dxPct = ((ev.clientX - startX) / rect.width) * 100;
+      const dyPct = ((ev.clientY - startY) / rect.height) * 100;
       if (mode === "move") {
         let x = start.x + dxPct;
         let y = start.y + dyPct;
@@ -232,9 +236,10 @@ function EditorCanvas({
       } else {
         // Map diagonal drag to size: down-right grows, up-left shrinks.
         // (dx + dy) projects the pointer movement onto the down-right
-        // diagonal direction. Scaled so a full short-axis drag changes
-        // size by ~1.5 units, which is enough to span the [0.5, 2.0]
-        // range with a finger swipe.
+        // diagonal direction. Scaled against the short axis so the same
+        // finger travel produces the same size change regardless of
+        // orientation.
+        const shortAxis = Math.min(rect.width, rect.height);
         const dx = ev.clientX - startX;
         const dy = ev.clientY - startY;
         const next = start.size + ((dx + dy) / shortAxis) * 1.5;
