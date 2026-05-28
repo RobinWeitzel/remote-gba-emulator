@@ -1,28 +1,27 @@
 import { useState } from "react";
 import { Modal } from "./primitives";
-import type { RomMeta } from "../lib/api";
 
 interface Props {
-  roms: RomMeta[];
-  onCommit: (playerName: string, saveName: string, romId: string) => void;
+  onCommit: (playerName: string) => void;
 }
 
-export function OnboardingModal({ roms, onCommit }: Props) {
+// First-run onboarding. Only collects the player's name and explains the
+// model. After commit, the home screen takes over — there the user can
+// join an existing save or tap the + FAB to create a new one.
+export function OnboardingModal({ onCommit }: Props) {
   const [step, setStep] = useState(0);
   const [playerName, setPlayerName] = useState("");
-  const [saveName, setSaveName] = useState("");
-  const [romId, setRomId] = useState(roms[0]?.id ?? "");
 
-  const next = () => setStep((s) => Math.min(2, s + 1));
+  const next = () => setStep((s) => Math.min(1, s + 1));
   const back = () => setStep((s) => Math.max(0, s - 1));
   const canStep0 = playerName.trim().length > 0;
-  const canStep2 = saveName.trim().length > 0 && romId.length > 0;
+  const isLastStep = step === 1;
 
   return (
     <Modal open>
       <div style={{ maxWidth: 520, margin: "0 auto", display: "flex", flexDirection: "column", gap: 24, minHeight: "85dvh" }}>
         <div style={{ display: "flex", gap: 6, justifyContent: "center", marginTop: 24 }}>
-          {[0, 1, 2].map((i) => (
+          {[0, 1].map((i) => (
             <div key={i} style={{
               width: 8, height: 8, borderRadius: 99,
               background: i === step ? "var(--accent)" : "var(--bg-3)",
@@ -62,44 +61,21 @@ export function OnboardingModal({ roms, onCommit }: Props) {
               </ol>
             </>
           )}
-          {step === 2 && (
-            <>
-              <h1 style={{ fontSize: 28, marginBottom: 8 }}>Start your first save</h1>
-              <p style={{ color: "var(--fg-muted)", marginBottom: 18 }}>
-                Pick a ROM and give the save a name. You can change everything later.
-              </p>
-              <input
-                value={saveName}
-                onChange={(e) => setSaveName(e.target.value)}
-                placeholder="Save name, e.g. Emerald run"
-                maxLength={64}
-                style={{
-                  background: "var(--bg-2)", color: "var(--fg)", border: 0,
-                  borderRadius: "var(--r-md)", padding: "12px 14px", fontSize: 16, marginBottom: 10,
-                }}
-                data-testid="onboard-save-name"
-              />
-              <select
-                value={romId}
-                onChange={(e) => setRomId(e.target.value)}
-                style={{
-                  background: "var(--bg-2)", color: "var(--fg)", border: 0,
-                  borderRadius: "var(--r-md)", padding: "12px 14px", fontSize: 16,
-                }}
-                data-testid="onboard-rom"
-              >
-                {roms.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-              </select>
-            </>
-          )}
         </div>
 
         <div style={{ display: "flex", gap: 10, marginBottom: 24 }}>
-          {step > 0 && <button onClick={back} style={{ flex: 1, padding: 14, borderRadius: "var(--r-md)", background: "var(--bg-2)", color: "var(--fg)", border: 0 }}>Back</button>}
-          {step < 2 ? (
+          {step > 0 && (
+            <button
+              onClick={back}
+              style={{ flex: 1, padding: 14, borderRadius: "var(--r-md)", background: "var(--bg-2)", color: "var(--fg)", border: 0 }}
+            >
+              Back
+            </button>
+          )}
+          {!isLastStep ? (
             <button
               onClick={next}
-              disabled={step === 0 && !canStep0}
+              disabled={!canStep0}
               style={{ flex: 2, padding: 14, borderRadius: "var(--r-md)", background: "var(--accent)", color: "var(--accent-on)", border: 0, fontWeight: 600 }}
               data-testid="onboard-next"
             >
@@ -107,12 +83,11 @@ export function OnboardingModal({ roms, onCommit }: Props) {
             </button>
           ) : (
             <button
-              onClick={() => onCommit(playerName.trim(), saveName.trim(), romId)}
-              disabled={!canStep2}
+              onClick={() => onCommit(playerName.trim())}
               style={{ flex: 2, padding: 14, borderRadius: "var(--r-md)", background: "var(--accent)", color: "var(--accent-on)", border: 0, fontWeight: 600 }}
               data-testid="onboard-create"
             >
-              Create save
+              Get started
             </button>
           )}
         </div>

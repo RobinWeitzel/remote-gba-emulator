@@ -88,11 +88,9 @@ export function HomePage() {
 
   if (!nameOk) {
     return <OnboardingModal
-      roms={roms ?? []}
-      onCommit={(playerName, saveName, romId) => {
+      onCommit={(playerName) => {
         setPlayerName(playerName);
         setName(playerName);
-        createSave({ name: saveName, romId }).then((s) => navigate(`/s/${s.id}`));
       }}
     />;
   }
