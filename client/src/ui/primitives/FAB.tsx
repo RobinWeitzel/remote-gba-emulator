@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { useHaptics } from "../hooks/useHaptics";
+import { click } from "../../lib/click";
 
 interface Props {
   onClick: () => void;
@@ -15,7 +16,7 @@ export function FAB({ onClick, children, ariaLabel, testId }: Props) {
       className="app-fab"
       aria-label={ariaLabel}
       data-testid={testId}
-      onClick={() => { haptics("tap"); onClick(); }}
+      onClick={() => { click(); haptics("tap"); onClick(); }}
     >
       {children}
     </button>

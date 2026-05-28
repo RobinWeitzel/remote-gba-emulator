@@ -1,3 +1,5 @@
+import { click } from "../../lib/click";
+
 export interface SegmentOption<V extends string> {
   value: V;
   label: string;
@@ -22,7 +24,7 @@ export function SegmentedControl<V extends string>({
           role="radio"
           aria-pressed={value === opt.value}
           aria-checked={value === opt.value}
-          onClick={() => onChange(opt.value)}
+          onClick={() => { click(); onChange(opt.value); }}
           data-testid={testId ? `${testId}-${opt.value}` : undefined}
         >
           {opt.label}

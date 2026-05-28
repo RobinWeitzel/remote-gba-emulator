@@ -2,6 +2,7 @@
 // Replaces window.confirm.
 
 import { Sheet, type SheetState } from "./Sheet";
+import { click } from "../../lib/click";
 
 export interface ActionItem {
   label: string;
@@ -37,7 +38,7 @@ export function ActionSheet({ open, title, items, onClose }: Props) {
               <button
                 data-destructive={it.destructive || undefined}
                 data-testid={it.testId}
-                onClick={() => { it.onSelect(); onClose(); }}
+                onClick={() => { click(); it.onSelect(); onClose(); }}
               >
                 <span>{it.label}</span>
                 {it.trailing === "chevron" && <span className="chevron">›</span>}
