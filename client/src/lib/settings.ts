@@ -159,3 +159,20 @@ export function useResolvedSettings(romId: string | null): ResolvedSettings {
   }, [romId]);
   return resolved;
 }
+
+export function useGlobalSettings(): {
+  settings: GlobalSettings;
+  setSettings: (next: GlobalSettings) => void;
+  patch: (delta: Partial<GlobalSettings>) => void;
+  refresh: () => void;
+} {
+  const [settings, setS] = useState<GlobalSettings>(loadGlobal);
+  const setSettings = (next: GlobalSettings) => { saveGlobal(next); setS(next); };
+  const patch = (delta: Partial<GlobalSettings>) => {
+    const next = { ...settings, ...delta };
+    saveGlobal(next);
+    setS(next);
+  };
+  const refresh = () => setS(loadGlobal());
+  return { settings, setSettings, patch, refresh };
+}
