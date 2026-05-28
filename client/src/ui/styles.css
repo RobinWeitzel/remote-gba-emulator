@@ -1218,3 +1218,25 @@ input:focus, select:focus, button:focus-visible {
      is "true", we still render via display:contents so M5 just adds the
      absolute-positioning rules without breaking M4's preview. */
 }
+
+/* Custom button layout. Only active when .pad-host has data-custom="true".
+   Each button anchors at (var(--btn-<id>-x), var(--btn-<id>-y)) and scales
+   by var(--btn-<id>-size). x/y are % of the short-axis viewport. */
+
+.pad-host[data-custom="true"] .pad-panel { display: none; }
+
+.pad-host[data-custom="true"] .pad-btn-custom,
+.pad-host[data-custom="true"] .pad-dpad-custom {
+  position: fixed;
+  z-index: 30;
+  opacity: var(--pad-opacity, 1);
+  transform: translate(-50%, -50%);
+}
+
+.pad-host[data-custom="true"] .pad-dpad-custom { left: var(--btn-dpad-x); top: var(--btn-dpad-y); width: calc(96px * var(--btn-dpad-size, 1)); height: calc(96px * var(--btn-dpad-size, 1)); }
+.pad-host[data-custom="true"] .pad-a-custom    { left: var(--btn-a-x);    top: var(--btn-a-y);    width: calc(56px * var(--btn-a-size, 1));    height: calc(56px * var(--btn-a-size, 1)); }
+.pad-host[data-custom="true"] .pad-b-custom    { left: var(--btn-b-x);    top: var(--btn-b-y);    width: calc(56px * var(--btn-b-size, 1));    height: calc(56px * var(--btn-b-size, 1)); }
+.pad-host[data-custom="true"] .pad-l-custom    { left: var(--btn-l-x);    top: var(--btn-l-y);    width: calc(48px * var(--btn-l-size, 1));    height: calc(28px * var(--btn-l-size, 1)); }
+.pad-host[data-custom="true"] .pad-r-custom    { left: var(--btn-r-x);    top: var(--btn-r-y);    width: calc(48px * var(--btn-r-size, 1));    height: calc(28px * var(--btn-r-size, 1)); }
+.pad-host[data-custom="true"] .pad-start-custom  { left: var(--btn-start-x);  top: var(--btn-start-y);  width: calc(56px * var(--btn-start-size, .7));  height: calc(22px * var(--btn-start-size, .7)); }
+.pad-host[data-custom="true"] .pad-select-custom { left: var(--btn-select-x); top: var(--btn-select-y); width: calc(56px * var(--btn-select-size, .7)); height: calc(22px * var(--btn-select-size, .7)); }

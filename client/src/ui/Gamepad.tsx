@@ -240,26 +240,46 @@ export function Gamepad({ onPress, onRelease, disabled, buttonLayout }: Props) {
 
   return (
     <div className="pad-host" style={cssVars} data-custom={buttonLayout ? "true" : undefined}>
-      <div className={`pad-panel pad-panel-left${disabledCls}`} aria-hidden={disabled}>
-        <button ref={lRef} className="pad-btn pad-shoulder">L</button>
-        <div ref={dpadRef} className="pad-dpad" aria-label="D-pad">
-          <div className="dpad-up">▲</div>
-          <div className="dpad-left">◀</div>
-          <div className="dpad-right">▶</div>
-          <div className="dpad-down">▼</div>
-          <div className="dpad-center" />
-        </div>
-        <button ref={selectRef} className="pad-btn pad-pill">SELECT</button>
-      </div>
-
-      <div className={`pad-panel pad-panel-right${disabledCls}`} aria-hidden={disabled}>
-        <button ref={rRef} className="pad-btn pad-shoulder">R</button>
-        <div className="pad-face">
-          <button ref={bRef} className="pad-btn pad-face-b">B</button>
-          <button ref={aRef} className="pad-btn pad-face-a">A</button>
-        </div>
-        <button ref={startRef} className="pad-btn pad-pill">START</button>
-      </div>
+      {!buttonLayout && (
+        <>
+          <div className={`pad-panel pad-panel-left${disabledCls}`} aria-hidden={disabled}>
+            <button ref={lRef} className="pad-btn pad-shoulder">L</button>
+            <div ref={dpadRef} className="pad-dpad" aria-label="D-pad">
+              <div className="dpad-up">▲</div>
+              <div className="dpad-left">◀</div>
+              <div className="dpad-right">▶</div>
+              <div className="dpad-down">▼</div>
+              <div className="dpad-center" />
+            </div>
+            <button ref={selectRef} className="pad-btn pad-pill">SELECT</button>
+          </div>
+          <div className={`pad-panel pad-panel-right${disabledCls}`} aria-hidden={disabled}>
+            <button ref={rRef} className="pad-btn pad-shoulder">R</button>
+            <div className="pad-face">
+              <button ref={bRef} className="pad-btn pad-face-b">B</button>
+              <button ref={aRef} className="pad-btn pad-face-a">A</button>
+            </div>
+            <button ref={startRef} className="pad-btn pad-pill">START</button>
+          </div>
+        </>
+      )}
+      {buttonLayout && (
+        <>
+          <button ref={lRef} className="pad-btn pad-shoulder pad-l-custom pad-btn-custom">L</button>
+          <button ref={rRef} className="pad-btn pad-shoulder pad-r-custom pad-btn-custom">R</button>
+          <div ref={dpadRef} className="pad-dpad pad-dpad-custom" aria-label="D-pad">
+            <div className="dpad-up">▲</div>
+            <div className="dpad-left">◀</div>
+            <div className="dpad-right">▶</div>
+            <div className="dpad-down">▼</div>
+            <div className="dpad-center" />
+          </div>
+          <button ref={bRef} className="pad-btn pad-face-b pad-b-custom pad-btn-custom">B</button>
+          <button ref={aRef} className="pad-btn pad-face-a pad-a-custom pad-btn-custom">A</button>
+          <button ref={startRef} className="pad-btn pad-pill pad-start-custom pad-btn-custom">START</button>
+          <button ref={selectRef} className="pad-btn pad-pill pad-select-custom pad-btn-custom">SELECT</button>
+        </>
+      )}
     </div>
   );
 }
