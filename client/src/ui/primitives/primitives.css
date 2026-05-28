@@ -139,3 +139,26 @@
   background: var(--accent); border-radius: 50%; border: 0;
   box-shadow: var(--sh-1);
 }
+
+.app-segmented {
+  display: inline-flex;
+  background: var(--bg-3);
+  border-radius: var(--r-md);
+  padding: 3px;
+  gap: 2px;
+}
+.app-segmented button {
+  flex: 1; min-height: 36px;
+  background: transparent; color: var(--fg-muted);
+  border: 0; border-radius: calc(var(--r-md) - 3px);
+  padding: 4px 14px;
+  font-size: 13px; font-weight: 600;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-app), color var(--dur-fast) var(--ease-app);
+  white-space: nowrap;
+}
+.app-segmented button[aria-pressed="true"] {
+  background: var(--bg-1); color: var(--fg);
+  box-shadow: var(--sh-1);
+}
+.app-segmented.full { display: flex; width: 100%; }
