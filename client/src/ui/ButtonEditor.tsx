@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { navigate, useRoute } from "../lib/router";
 import {
   loadGlobal, saveGlobal, loadRom, saveRom,
@@ -7,7 +7,9 @@ import {
 } from "../lib/settings";
 import {
   DEFAULT_BUTTON_LAYOUT, DEFAULT_PORTRAIT, DEFAULT_LANDSCAPE, deepClone,
+  clampToSafeArea,
 } from "../lib/buttonLayout";
+import { useSafeArea } from "./hooks/useSafeArea";
 import { listRoms, type RomMeta } from "../lib/api";
 import { SegmentedControl, Slider } from "./primitives";
 
@@ -40,7 +42,7 @@ export function ButtonEditor() {
   );
 
   const [layout, setLayout] = useState<ButtonLayout>(() => loadScopeLayout(scope));
-  const [, setSelected] = useState<ButtonId | null>(null);
+  const [selected, setSelected] = useState<ButtonId | null>(null);
   const [gridSnap, setGridSnap] = useState(false);
   const [roms, setRoms] = useState<RomMeta[]>([]);
 
@@ -50,6 +52,15 @@ export function ButtonEditor() {
     : "Default layout";
 
   const current = layout.orientations[orientation];
+
+  const patch = (id: ButtonId, delta: Partial<{ x: number; y: number; size: number }>) => {
+    setLayout((prev) => {
+      const next = deepClone(prev);
+      const cur = next.orientations[orientation].buttons[id];
+      next.orientations[orientation].buttons[id] = { ...cur, ...delta };
+      return next;
+    });
+  };
 
   const setOpacity = (v: number) => {
     setLayout((prev) => {
@@ -99,9 +110,14 @@ export function ButtonEditor() {
         </span>
       </div>
 
-      <EditorCanvasPlaceholder
+      <EditorCanvas
         orientation={orientation}
         layout={current}
+        selected={selected}
+        onSelect={setSelected}
+        onMove={(id, delta) => patch(id, delta)}
+        onResize={(id, size) => patch(id, { size })}
+        gridSnap={gridSnap}
       />
 
       <div className="editor-bottombar">
@@ -148,23 +164,124 @@ export function ButtonEditor() {
   );
 }
 
-// Placeholder — replaced in M5.4 with full drag/resize/alignment-guide logic.
-function EditorCanvasPlaceholder({
-  orientation, layout,
+function EditorCanvas({
+  orientation, layout, selected, onSelect, onMove, onResize, gridSnap,
 }: {
   orientation: "portrait" | "landscape";
   layout: OrientationLayout;
+  selected: ButtonId | null;
+  onSelect: (id: ButtonId | null) => void;
+  onMove: (id: ButtonId, delta: { x?: number; y?: number }) => void;
+  onResize: (id: ButtonId, size: number) => void;
+  gridSnap: boolean;
 }) {
-  const screenStyle = orientation === "landscape"
-    ? { width: "min(48vw, 60vh * 1.5)", aspectRatio: "240/160" }
-    : { width: "min(72vw, 50vh * 1.5)", aspectRatio: "240/160" };
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+  const [guides, setGuides] = useState<{ vert: number[]; horiz: number[] }>({ vert: [], horiz: [] });
+  const safeArea = useSafeArea();
+
+  const screenStyle = useMemo(() => {
+    return orientation === "landscape"
+      ? { width: "min(48vw, calc(60vh * 1.5))", aspectRatio: "240/160" }
+      : { width: "min(72vw, calc(50vh * 1.5))", aspectRatio: "240/160" };
+  }, [orientation]);
+
+  const startDrag = (
+    id: ButtonId,
+    e: React.PointerEvent,
+    mode: "move" | "resize",
+  ) => {
+    e.preventDefault();
+    e.stopPropagation();
+    onSelect(id);
+    const wrap = wrapRef.current;
+    if (!wrap) return;
+    try { (e.target as Element).setPointerCapture?.(e.pointerId); } catch { /* ignore */ }
+    const rect = wrap.getBoundingClientRect();
+    const shortAxis = Math.min(rect.width, rect.height);
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const start = layout.buttons[id];
+
+    const move = (ev: PointerEvent) => {
+      const dxPct = ((ev.clientX - startX) / shortAxis) * 100;
+      const dyPct = ((ev.clientY - startY) / shortAxis) * 100;
+      if (mode === "move") {
+        let x = start.x + dxPct;
+        let y = start.y + dyPct;
+        if (gridSnap) { x = Math.round(x / 4) * 4; y = Math.round(y / 4) * 4; }
+        const clamped = clampToSafeArea({ x, y, size: start.size }, safeArea);
+        // Compute alignment guides against other buttons.
+        const allButtons = Object.entries(layout.buttons).filter(([k]) => k !== id);
+        const vert: number[] = [];
+        const horiz: number[] = [];
+        for (const [, p] of allButtons) {
+          if (Math.abs(p.x - clamped.x) < 1) vert.push(p.x);
+          if (Math.abs(p.y - clamped.y) < 1) horiz.push(p.y);
+        }
+        setGuides({ vert, horiz });
+        onMove(id, { x: clamped.x, y: clamped.y });
+      } else {
+        const dist = Math.hypot(ev.clientX - startX, ev.clientY - startY);
+        const next = start.size + (dist / shortAxis) * 0.04 * (ev.clientX > startX ? 1 : -1);
+        onResize(id, Math.max(0.5, Math.min(2.0, next)));
+      }
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+      setGuides({ vert: [], horiz: [] });
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+  };
 
   return (
-    <div className="editor-canvas" style={{ opacity: layout.opacity }}>
+    <div
+      className="editor-canvas"
+      ref={wrapRef}
+      style={{ opacity: layout.opacity }}
+      onClick={() => onSelect(null)}
+    >
       <div className="editor-screen" style={screenStyle as any} aria-label="GBA screen placeholder" />
-      <div style={{ position: "absolute", top: 12, left: 12, fontSize: 11, color: "var(--fg-muted)" }}>
-        Drag handles arrive in M5.4 — saving now persists the current orientation's opacity.
+
+      <div className="editor-guides" aria-hidden style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>
+        {guides.vert.map((x, i) => (
+          <div key={`v${i}`} className="guide vert" style={{ left: `${x}%` }} />
+        ))}
+        {guides.horiz.map((y, i) => (
+          <div key={`h${i}`} className="guide horiz" style={{ top: `${y}%` }} />
+        ))}
       </div>
+
+      {(Object.entries(layout.buttons) as [ButtonId, { x: number; y: number; size: number }][]).map(([id, p]) => {
+        const baseSize = id === "dpad" ? 96 : id === "start" || id === "select" ? 56 : id === "l" || id === "r" ? 48 : 56;
+        const w = baseSize * p.size;
+        const h = id === "l" || id === "r" ? 28 * p.size : id === "start" || id === "select" ? 22 * p.size : w;
+        return (
+          <div
+            key={id}
+            className="btn-handle"
+            data-selected={selected === id || undefined}
+            data-testid={`handle-${id}`}
+            style={{
+              left: `${p.x}%`, top: `${p.y}%`,
+              width: w, height: h,
+              transform: "translate(-50%, -50%)",
+            }}
+            onPointerDown={(e) => startDrag(id, e, "move")}
+          >
+            <div className="move">{id.toUpperCase()}</div>
+            <div
+              className="resize"
+              onPointerDown={(e) => startDrag(id, e, "resize")}
+              role="slider"
+              aria-label={`Resize ${id}`}
+            >↘</div>
+          </div>
+        );
+      })}
     </div>
   );
 }
