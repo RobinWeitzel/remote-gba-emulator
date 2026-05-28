@@ -1,15 +1,24 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { navigate } from "../lib/router";
 import { useGlobalSettings, type ControlLayout, type HapticsMode } from "../lib/settings";
 import { getPlayerName, setPlayerName } from "../lib/player";
+import { listSaves, unarchiveSave, renameSave, deleteSave } from "../lib/api";
+import type { SaveSummary } from "@gba/shared";
 import { Avatar } from "./Avatar";
-import { Prompt, SegmentedControl } from "./primitives";
+import { Prompt, SegmentedControl, ActionSheet, type ActionItem } from "./primitives";
 import { IconBack } from "./icons";
 
 export function SettingsPage() {
   const { settings, patch } = useGlobalSettings();
   const [name, setName] = useState<string>(getPlayerName());
   const [editingName, setEditingName] = useState(false);
+  const [saves, setSaves] = useState<SaveSummary[]>([]);
+  const [rowMenuFor, setRowMenuFor] = useState<SaveSummary | null>(null);
+  const [renaming, setRenaming] = useState<SaveSummary | null>(null);
+
+  const refreshSaves = () => listSaves().then(setSaves).catch(() => {});
+  useEffect(() => { refreshSaves(); }, []);
+  const archived = saves.filter((s) => s.archived);
 
   const commitName = (n: string) => {
     setPlayerName(n);
@@ -98,12 +107,23 @@ export function SettingsPage() {
           </button>
         </section>
 
-        {/* ===== Archived (placeholder — wired in M2.5) ===== */}
+        {/* ===== Archived ===== */}
         <section className="settings-section">
-          <h2>Archived saves</h2>
-          <div className="settings-row">
-            <span className="label" style={{ color: "var(--fg-muted)" }}>Loading…</span>
-          </div>
+          <h2>Archived saves ({archived.length})</h2>
+          {archived.length === 0 ? (
+            <div className="settings-row" style={{ color: "var(--fg-muted)" }}>None.</div>
+          ) : archived.map((s) => (
+            <button
+              key={s.id}
+              className="settings-row"
+              onClick={() => setRowMenuFor(s)}
+              data-testid={`archived-row-${s.id}`}
+            >
+              <span className="label">{s.name}</span>
+              <span className="value">{s.romName}</span>
+              <span className="chevron">›</span>
+            </button>
+          ))}
         </section>
 
         {/* ===== About ===== */}
@@ -136,6 +156,43 @@ export function SettingsPage() {
         maxLength={32}
         onSubmit={commitName}
         onCancel={() => setEditingName(false)}
+      />
+      <ActionSheet
+        open={rowMenuFor !== null}
+        title={rowMenuFor?.name}
+        items={rowMenuFor ? [
+          { label: "Restore", onSelect: async () => { await unarchiveSave(rowMenuFor.id); refreshSaves(); }, testId: "act-restore" },
+          { label: "Rename…", onSelect: () => setRenaming(rowMenuFor), testId: "act-rename" },
+          {
+            label: "Download save state…",
+            onSelect: () => {
+              const safeName = rowMenuFor.name.replace(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 40) || "save";
+              const a = document.createElement("a");
+              a.href = `/api/saves/${encodeURIComponent(rowMenuFor.id)}/snapshot`;
+              a.download = `${safeName}-${rowMenuFor.id}.state`;
+              a.click();
+            },
+            testId: "act-download",
+          },
+          {
+            label: "Delete forever",
+            destructive: true,
+            onSelect: async () => { await deleteSave(rowMenuFor.id); refreshSaves(); },
+            testId: "act-delete",
+          },
+        ] : []}
+        onClose={() => setRowMenuFor(null)}
+      />
+      <Prompt
+        open={renaming !== null}
+        title={`Rename "${renaming?.name ?? ""}"`}
+        initialValue={renaming?.name ?? ""}
+        cta="Save"
+        onSubmit={async (v) => {
+          if (renaming) await renameSave(renaming.id, v);
+          setRenaming(null); refreshSaves();
+        }}
+        onCancel={() => setRenaming(null)}
       />
     </div>
   );
