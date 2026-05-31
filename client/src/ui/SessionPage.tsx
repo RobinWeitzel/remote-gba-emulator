@@ -18,9 +18,10 @@ import { acquireWakeLock } from "../lib/wake";
 import { Gamepad } from "./Gamepad";
 import { navigate, useRoute, routeUrl } from "../lib/router";
 import { getBackend } from "../net/backend";
-import type { BackendAdapter, InviteRef, MemberId, RosterMember } from "../net/adapter";
+import { encodeInvite } from "../net/inviteCodec";
+import type { BackendAdapter, InviteRef, MemberId, RosterMember, FirebaseConfigLike } from "../net/adapter";
 import { getRomBytes, importRom } from "../lib/romStore";
-import { rememberSession, touchSession, forgetSession } from "../lib/sessionStore";
+import { rememberSession, touchSession, forgetSession, getMySession } from "../lib/sessionStore";
 import { bytesToBase64, base64ToBytes } from "../lib/b64";
 import { getPlayerName, setPlayerName } from "../lib/player";
 import { effectiveControlLayout, loadGlobal, useOrientation, useResolvedSettings, type ControlLayout } from "../lib/settings";
@@ -57,6 +58,7 @@ export function SessionPage() {
   const coreBootedRef = useRef<boolean>(false);
   const joinNameRef = useRef<string>("");
   const romHashRef = useRef<string>("");
+  const sessionConfigRef = useRef<FirebaseConfigLike | null>(null);
   // Durable long-term save (§12): a checkpoint that survives everyone leaving,
   // written by the controller every DURABLE_INTERVAL_MS. durableFallback holds a
   // loaded durable save used to bootstrap a session whose live snapshot was
@@ -247,13 +249,26 @@ export function SessionPage() {
     joinNameRef.current = playerName.trim();
     let disposed = false;
 
+    // Resolve which Firebase project this session lives on (own game or one we
+    // were invited to — possibly someone else's project). We only know sessions
+    // we created or were invited to.
+    const stored = getMySession(sessionId);
+    if (!stored) {
+      setErr("This game isn't on this device. Open the invite link you were sent.");
+      setStatus("error");
+      return;
+    }
+    sessionConfigRef.current = stored.config;
+    if (stored.romName) setRomName(stored.romName);
+    if (stored.romHash) romHashRef.current = stored.romHash;
+
     (async () => {
       let adapter: BackendAdapter;
       try {
-        adapter = await getBackend();
+        adapter = await getBackend(stored.config);
       } catch (e: any) {
         if (disposed) return;
-        setErr(e?.name === "MissingConfigError" ? e.message : `Connection failed: ${e?.message ?? e}`);
+        setErr(`Connection failed: ${e?.message ?? e}`);
         setStatus("error");
         return;
       }
@@ -276,7 +291,7 @@ export function SessionPage() {
       setRomName(meta.romName);
       multiplierRef.current = meta.speedMultiplier || 1;
       setMultiplier(meta.speedMultiplier || 1);
-      rememberSession({ sessionId, romName: meta.romName, romHash: meta.romHash, role: adapter.isOwner() ? "owner" : "member" });
+      rememberSession({ sessionId, config: stored.config, romName: meta.romName, romHash: meta.romHash, role: adapter.isOwner() ? "owner" : "member" });
 
       // Wire listeners.
       adapter.onConnected((c) => setConnState(c ? "open" : "closed"));
@@ -477,10 +492,14 @@ export function SessionPage() {
 
   const mintInvite = async () => {
     const adapter = adapterRef.current;
-    if (!adapter || !adapter.isOwner()) return;
+    const cfg = sessionConfigRef.current;
+    if (!adapter || !adapter.isOwner() || !cfg) return;
     try {
       const ref: InviteRef = await adapter.mintInvite();
-      const url = routeUrl(`/join?s=${encodeURIComponent(ref.sessionId)}&i=${encodeURIComponent(ref.inviteId)}`);
+      // The link carries the OWNER'S config so the invited device can connect to
+      // the owner's project — the config is never baked into the app build.
+      const blob = encodeInvite({ config: cfg, sessionId: ref.sessionId, inviteId: ref.inviteId, romName });
+      const url = routeUrl(`/join?d=${blob}`);
       setInviteUrl(url);
       try { await navigator.clipboard?.writeText(url); } catch { /* ignore */ }
     } catch (e) {
@@ -506,25 +525,10 @@ export function SessionPage() {
     );
   }
 
-  if (status === "needs-rom") {
-    return (
-      <div className="home" data-testid="needs-rom">
-        <h1>Load your ROM</h1>
-        <p style={{ color: "var(--fg-muted)" }}>
-          This game runs on your own copy of <strong>{romName}</strong>. Pick your
-          local ROM file — it stays on this device and is matched by fingerprint so
-          everyone plays byte-identical content. It’s never uploaded or shared.
-        </p>
-        <input
-          type="file"
-          accept=".gba,.gb,.gbc,application/octet-stream"
-          data-testid="rom-file-input"
-          onChange={(e) => { const f = e.target.files?.[0]; if (f) onPickRom(f); }}
-        />
-        <button onClick={onBack} style={{ marginTop: 16 }}>Back to home</button>
-      </div>
-    );
-  }
+  // NOTE: needs-rom is rendered as an overlay inside the main tree below — NOT
+  // as an early return — so the <canvas> stays mounted and bootCore() (called
+  // from onPickRom) can find it. (An early return here left the canvas
+  // unmounted → "canvas not mounted".)
 
   const isController = role === "controller";
   const controllerFree = controllerId === null;
@@ -590,6 +594,27 @@ export function SessionPage() {
         onMintInvite={mintInvite}
         onEndGame={endGame}
       />
+
+      {status === "needs-rom" && (
+        <Modal open>
+          <div data-testid="needs-rom" style={{ maxWidth: 480, margin: "0 auto", display: "flex", flexDirection: "column", justifyContent: "center", minHeight: "85dvh" }}>
+            <div style={{ fontSize: 11, color: "var(--fg-muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>{romName}</div>
+            <h1 style={{ fontSize: 28, marginBottom: 8 }}>Load your ROM</h1>
+            <p style={{ color: "var(--fg-muted)", marginBottom: 18 }}>
+              This game runs on your own copy of <strong>{romName}</strong>. Pick your local ROM
+              file — it stays on this device and is matched by fingerprint so everyone plays
+              byte-identical content. It’s never uploaded or shared.
+            </p>
+            <input
+              type="file"
+              accept=".gba,.gb,.gbc,application/octet-stream"
+              data-testid="rom-file-input"
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) onPickRom(f); }}
+            />
+            <button onClick={onBack} style={{ marginTop: 16, alignSelf: "flex-start" }}>Back to home</button>
+          </div>
+        </Modal>
+      )}
 
       {status === "needs-tap" && (
         <Modal open>

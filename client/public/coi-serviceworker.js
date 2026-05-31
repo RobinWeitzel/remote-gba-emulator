@@ -9,16 +9,20 @@
 // SharedArrayBuffer). GitHub Pages cannot set these headers itself, so this
 // shim is what makes the threaded emulator work on a static host (SPEC §9).
 //
-// We prefer COEP `require-corp` (coepCredentialless: false) per SPEC §9; the
-// shim auto-degrades to `credentialless` only if require-corp ever fails to
-// isolate, so isolation is never silently lost.
-let coepCredentialless = false;
+// COEP is hardcoded to `credentialless` (NOT require-corp): both give
+// cross-origin isolation + SharedArrayBuffer, but require-corp BLOCKS Firebase
+// RTDB's cross-origin traffic (the long-poll fallback fails with
+// ERR_BLOCKED_BY_RESPONSE...DefaultedToSameOriginByCoep). Hardcoding the SW
+// default (rather than relying on the window→SW postMessage, which only takes
+// effect after a reload) makes the mode deterministic on first control. See
+// DECISIONS D15.
+let coepCredentialless = true;
 if (typeof window === 'undefined') {
     // App-shell cache for offline launch + installability (SPEC §10). This is
     // layered ON TOP of the COOP/COEP header injection below — every response,
     // cached or network, gets the isolation headers re-applied, so caching
     // never weakens cross-origin isolation. Bump CACHE to invalidate old shells.
-    const CACHE = "gba-shell-v2";
+    const CACHE = "gba-shell-v3";
 
     self.addEventListener("install", () => self.skipWaiting());
     self.addEventListener("activate", (event) => event.waitUntil((async () => {

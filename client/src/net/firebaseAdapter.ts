@@ -10,7 +10,7 @@
 //
 // Data model: SPEC-SERVERLESS §5.
 
-import { initializeApp, type FirebaseApp } from "firebase/app";
+import { initializeApp, getApp, getApps, type FirebaseApp } from "firebase/app";
 import {
   getAuth,
   signInAnonymously as fbSignInAnonymously,
@@ -59,10 +59,6 @@ import type {
 } from "./adapter";
 
 const MEMBER_ID_KEY = "gba.memberId";
-// Distinct Firebase app name per adapter instance so multiple adapters can
-// coexist in one process (e.g. two simulated devices in an integration test);
-// initializeApp throws on a duplicate default app.
-let appCounter = 0;
 const HEARTBEAT_MS = 5000;
 // A member is "online" if their lastSeen is within this window. onDisconnect
 // removes lastSeen on a clean drop; the window covers a missed heartbeat or two
@@ -74,6 +70,7 @@ export class FirebaseAdapter implements BackendAdapter {
   private auth: Auth | null = null;
   private db: Database | null = null;
   private uid: MemberId | null = null;
+  private projectId = "";
   private authReady: Promise<void> | null = null;
 
   private sessionId: SessionId | null = null;
@@ -84,17 +81,23 @@ export class FirebaseAdapter implements BackendAdapter {
   private unsubs = new Set<Unsub>();
 
   // ---- identity / lifecycle ----
-  async init(config: FirebaseConfigLike): Promise<void> {
-    this.app = initializeApp(
-      {
-        apiKey: config.apiKey,
-        authDomain: config.authDomain,
-        databaseURL: config.databaseURL,
-        projectId: config.projectId,
-        appId: config.appId,
-      },
-      `gba-${Date.now()}-${appCounter++}`,
-    );
+  // The Firebase app NAME must be STABLE per project: Firebase Auth persists the
+  // anonymous credential in IndexedDB keyed by (apiKey, appName), so a name that
+  // changed each page load gave a NEW anonymous UID every reload → "not a
+  // member" → permission denied. Use `gba-<projectId>` (stable, and distinct per
+  // project so multiple owners' configs coexist). `instanceId` is only for
+  // multi-device integration tests that need several adapters in one process.
+  async init(config: FirebaseConfigLike, instanceId?: string): Promise<void> {
+    const appName = `gba-${config.projectId}${instanceId ? `-${instanceId}` : ""}`;
+    const appConfig = {
+      apiKey: config.apiKey,
+      authDomain: config.authDomain,
+      databaseURL: config.databaseURL,
+      projectId: config.projectId,
+      appId: config.appId,
+    };
+    this.projectId = config.projectId;
+    this.app = getApps().some((a) => a.name === appName) ? getApp(appName) : initializeApp(appConfig, appName);
     this.auth = getAuth(this.app);
     this.db = getDatabase(this.app);
 
@@ -111,7 +114,7 @@ export class FirebaseAdapter implements BackendAdapter {
       const unsub = onAuthStateChanged(this.auth!, (user) => {
         this.uid = user?.uid ?? null;
         if (this.uid) {
-          try { localStorage.setItem(MEMBER_ID_KEY, this.uid); } catch { /* ignore */ }
+          try { localStorage.setItem(`${MEMBER_ID_KEY}.${this.projectId}`, this.uid); } catch { /* ignore */ }
         }
         resolve();
         unsub();
@@ -130,7 +133,7 @@ export class FirebaseAdapter implements BackendAdapter {
   }
 
   getStoredMemberId(): MemberId | null {
-    try { return localStorage.getItem(MEMBER_ID_KEY); } catch { return null; }
+    try { return localStorage.getItem(`${MEMBER_ID_KEY}.${this.projectId}`); } catch { return null; }
   }
 
   // Test-only: force an ungraceful disconnect/reconnect so onDisconnect handlers
@@ -154,6 +157,26 @@ export class FirebaseAdapter implements BackendAdapter {
 
   currentMemberId(): MemberId | null {
     return this.uid;
+  }
+
+  // On a FRESH page load, signInAnonymously() resolves before the new RTDB
+  // connection has actually been handed the auth token, so the first rule-gated
+  // read/write can be evaluated with auth == null → "permission_denied". The
+  // SDK attaches the token a beat later. Retry the first authed op a few times
+  // with short backoff so a refresh doesn't dump the user on an error page.
+  private async withAuthRetry<T>(fn: () => Promise<T>, tries = 6): Promise<T> {
+    let lastErr: unknown;
+    for (let i = 0; i < tries; i++) {
+      try {
+        return await fn();
+      } catch (e) {
+        lastErr = e;
+        const msg = String((e as any)?.message ?? e);
+        if (!/permission[_ ]denied/i.test(msg)) throw e;
+        await new Promise((r) => setTimeout(r, 100 * (i + 1)));
+      }
+    }
+    throw lastErr;
   }
 
   private requireSession(): { db: Database; sessionId: SessionId; uid: MemberId } {
@@ -180,13 +203,13 @@ export class FirebaseAdapter implements BackendAdapter {
     // membership/controller writes must come AFTER `meta/owners` is committed.
     // Only the creator can touch this session at this point (no invite exists),
     // so the brief non-atomicity is invisible to anyone else.
-    await update(ref(this.db, `sessions/${sessionId}/meta`), {
+    await this.withAuthRetry(() => update(ref(this.db!, `sessions/${sessionId}/meta`), {
       owners: { [uid]: true },
       romHash: opts.romHash,
       romName: opts.romName,
       createdAt: now,
       speedMultiplier: 1,
-    });
+    }));
     await update(ref(this.db, `sessions/${sessionId}`), {
       [`members/${uid}`]: { name: opts.name, joinedAt: now, lastSeen: now, owner: true },
       "controllerLock/holder": uid,
@@ -210,10 +233,12 @@ export class FirebaseAdapter implements BackendAdapter {
     // absent. Two simultaneous redeemers → exactly one winner; the loser's
     // transaction sees a non-null value and aborts.
     const redeemedRef = this.sref(`invites/${invite.inviteId}/redeemedBy`);
-    const result = await runTransaction(redeemedRef, (current) => {
-      if (current === null) return uid; // claim it
-      return; // abort — already redeemed
-    });
+    const result = await this.withAuthRetry(() =>
+      runTransaction(redeemedRef, (current) => {
+        if (current === null) return uid; // claim it
+        return; // abort — already redeemed
+      }),
+    );
     // Success if redeemedBy is now OUR uid — whether we just won it (committed)
     // or had already redeemed it before (idempotent re-click of the link).
     if (result.snapshot.val() !== uid) {
@@ -248,7 +273,8 @@ export class FirebaseAdapter implements BackendAdapter {
     if (!this.db) throw new Error("adapter not initialised");
     const uid = await this.signInAnonymously();
     this.sessionId = sessionId;
-    const memberSnap = await get(this.sref(`members/${uid}`));
+    // First authed read — also waits out the post-sign-in auth-propagation race.
+    const memberSnap = await this.withAuthRetry(() => get(this.sref(`members/${uid}`)));
     if (!memberSnap.exists()) {
       this.sessionId = null;
       throw new Error("No membership for this device. You need a fresh invite to rejoin.");

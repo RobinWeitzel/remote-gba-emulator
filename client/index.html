@@ -11,14 +11,20 @@
          on first load it registers a service worker that injects COOP/COEP
          response headers (GitHub Pages can't set them) and reloads the page
          once so the SW controls it — enabling `crossOriginIsolated` /
-         SharedArrayBuffer for mGBA's threaded WASM. `window.coi` forces COEP
-         require-corp first (per SPEC), auto-degrading to credentialless only
-         if require-corp fails to isolate. The file is served from /public and
-         must NOT be bundled (it relies on being a standalone SW script). -->
+         SharedArrayBuffer for mGBA's threaded WASM. The file is served from
+         /public and must NOT be bundled (it relies on being a standalone SW).
+
+         COEP = `credentialless` (NOT require-corp): both give cross-origin
+         isolation + SharedArrayBuffer, but require-corp BLOCKS Firebase RTDB's
+         cross-origin traffic (the long-poll fallback fails with
+         ERR_BLOCKED_BY_RESPONSE...DefaultedToSameOriginByCoep). credentialless
+         lets that through (it strips credentials from no-cors cross-origin
+         requests, which Firebase doesn't rely on — it auths via tokens, not
+         cookies). See DECISIONS D5/D15. -->
     <script>
       window.coi = {
-        coepCredentialless: () => false, // require-corp first (SPEC §9)
-        coepDegrade: () => true,         // fall back to credentialless if needed
+        coepCredentialless: () => true, // credentialless: required for Firebase RTDB
+        coepDegrade: () => false,       // don't fall back to require-corp (it blocks RTDB)
         quiet: false,
       };
     </script>

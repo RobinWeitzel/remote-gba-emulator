@@ -1,37 +1,39 @@
-// Single shared backend adapter instance for the app (§16: BACKEND =
-// "firebase-rtdb"). Lazily initialised from the runtime firebase-config.json
-// (DECISIONS D3). The UI calls getBackend(); a MissingConfigError surfaces the
-// setup-needed state instead of crashing.
+// Multi-config backend registry. A user can host on their OWN Firebase project
+// AND be a member of sessions hosted on OTHER people's projects (config arrives
+// in the invite link). Each distinct project gets ONE adapter (one Firebase
+// app, one stable anonymous identity). Adapters are cached by projectId.
+//
+// There is NO build-time / global config any more — config is always supplied
+// by the caller (the user's own config, or a session's config). This is what
+// stops a random visitor to the app URL from consuming the owner's free quota.
 
 import { createBackendAdapter } from "./firebaseAdapter";
-import { loadFirebaseConfig, MissingConfigError } from "./config";
-import type { BackendAdapter } from "./adapter";
+import type { BackendAdapter, FirebaseConfigLike } from "./adapter";
 
-export { MissingConfigError };
+const adapters = new Map<string, BackendAdapter>();
+const initPromises = new Map<string, Promise<BackendAdapter>>();
 
-let adapter: BackendAdapter | null = null;
-let initPromise: Promise<BackendAdapter> | null = null;
-
-export function getBackend(): Promise<BackendAdapter> {
-  if (!initPromise) {
-    initPromise = (async () => {
-      const a = createBackendAdapter();
-      const cfg = await loadFirebaseConfig();
-      await a.init(cfg);
-      await a.signInAnonymously();
-      adapter = a;
-      return a;
-    })().catch((e) => {
-      // Allow a later retry (e.g. after the user adds the config).
-      initPromise = null;
-      throw e;
-    });
-  }
-  return initPromise;
+// Get (and lazily initialise) the adapter for a given config's project.
+export function getBackend(config: FirebaseConfigLike): Promise<BackendAdapter> {
+  const key = config.projectId;
+  if (!key) return Promise.reject(new Error("config has no projectId"));
+  const existing = initPromises.get(key);
+  if (existing) return existing;
+  const p = (async () => {
+    const a = createBackendAdapter();
+    await a.init(config);
+    await a.signInAnonymously();
+    adapters.set(key, a);
+    return a;
+  })().catch((e) => {
+    initPromises.delete(key); // allow retry
+    throw e;
+  });
+  initPromises.set(key, p);
+  return p;
 }
 
-// Already-initialised instance, or null. Lets components read currentMemberId()
-// synchronously once the app has connected.
-export function maybeBackend(): BackendAdapter | null {
-  return adapter;
+// Already-initialised adapter for a project, or null.
+export function maybeBackend(projectId: string): BackendAdapter | null {
+  return adapters.get(projectId) ?? null;
 }

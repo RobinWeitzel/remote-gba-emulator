@@ -19,6 +19,7 @@ const CFG: FirebaseConfigLike = {
     database: { host: "127.0.0.1", port: 9000 },
   },
 };
+let __dev = 0;
 
 async function clearDb() {
   await fetch("http://127.0.0.1:9000/.json?ns=demo-gba-default-rtdb", { method: "DELETE" });
@@ -26,7 +27,7 @@ async function clearDb() {
 
 async function newDevice(): Promise<FirebaseAdapter> {
   const a = new FirebaseAdapter();
-  await a.init(CFG);
+  await a.init(CFG, String(++__dev));
   await a.signInAnonymously();
   return a;
 }

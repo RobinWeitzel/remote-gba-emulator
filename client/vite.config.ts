@@ -26,10 +26,13 @@ function resolveAppVersion(): string {
 }
 const APP_VERSION = resolveAppVersion();
 
+// COEP `credentialless` (not require-corp) so Firebase RTDB's cross-origin
+// traffic isn't blocked, while still getting cross-origin isolation +
+// SharedArrayBuffer. Matches the production coi-serviceworker config. See
+// DECISIONS D15.
 const COOP_COEP_HEADERS = {
   "Cross-Origin-Opener-Policy": "same-origin",
-  "Cross-Origin-Embedder-Policy": "require-corp",
-  "Cross-Origin-Resource-Policy": "same-origin",
+  "Cross-Origin-Embedder-Policy": "credentialless",
   "X-Robots-Tag": "noindex",
 };
 

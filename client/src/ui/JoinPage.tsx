@@ -1,21 +1,28 @@
-// Invite redemption (SPEC-SERVERLESS §6/§7). Route: #/join?s=<sessionId>&i=<inviteId>.
+// Invite redemption (SPEC-SERVERLESS §6/§7). Route: #/join?d=<encoded payload>.
 //
-// Redeems the single-use invite atomically (adapter transaction), persists the
-// membership locally, then forwards to the session. The ROM hash-gate happens
-// in SessionPage. Re-clicking your own already-redeemed link is idempotent.
+// The payload carries the OWNER'S Firebase config + sessionId + inviteId (see
+// inviteCodec). We connect to that project (which may be a different owner's
+// project than any you've used before), redeem the single-use invite atomically,
+// store the membership + config locally, then forward to the session. Re-clicking
+// your own already-redeemed link is idempotent.
 
 import { useEffect, useState } from "react";
 import { navigate, useRoute } from "../lib/router";
-import { getBackend, MissingConfigError } from "../net/backend";
+import { getBackend } from "../net/backend";
+import { decodeInvite, type InvitePayload } from "../net/inviteCodec";
 import { rememberSession } from "../lib/sessionStore";
 import { getPlayerName, setPlayerName } from "../lib/player";
 
 type Phase = "need-name" | "joining" | "error";
 
+function parsePayload(raw: string | null): InvitePayload | null {
+  if (!raw) return null;
+  try { return decodeInvite(raw); } catch { return null; }
+}
+
 export function JoinPage() {
   const route = useRoute();
-  const sessionId = route.search.get("s") ?? "";
-  const inviteId = route.search.get("i") ?? "";
+  const payload = parsePayload(route.search.get("d"));
 
   const [phase, setPhase] = useState<Phase>(getPlayerName().trim() ? "joining" : "need-name");
   const [err, setErr] = useState<string | null>(null);
@@ -23,35 +30,39 @@ export function JoinPage() {
 
   useEffect(() => {
     if (phase !== "joining") return;
-    if (!sessionId || !inviteId) { setErr("This invite link is incomplete."); setPhase("error"); return; }
+    if (!payload) { setErr("This invite link is invalid or incomplete."); setPhase("error"); return; }
     let cancelled = false;
     (async () => {
       try {
-        const adapter = await getBackend();
-        await adapter.joinViaInvite({ sessionId, inviteId }, { name: getPlayerName().trim() || "Player" });
-        const meta = await adapter.getSessionMeta(sessionId);
+        const adapter = await getBackend(payload.config);
+        await adapter.joinViaInvite({ sessionId: payload.sessionId, inviteId: payload.inviteId }, { name: getPlayerName().trim() || "Player" });
+        const meta = await adapter.getSessionMeta(payload.sessionId);
         rememberSession({
-          sessionId,
-          romName: meta?.romName ?? "Game",
+          sessionId: payload.sessionId,
+          config: payload.config,
+          romName: meta?.romName ?? payload.romName ?? "Game",
           romHash: meta?.romHash ?? "",
           role: adapter.isOwner() ? "owner" : "member",
         });
-        if (!cancelled) navigate(`/s/${sessionId}`);
+        if (!cancelled) navigate(`/s/${payload.sessionId}`);
       } catch (e: any) {
         if (cancelled) return;
-        setErr(e instanceof MissingConfigError ? e.message : (e?.message ?? String(e)));
+        setErr(e?.message ?? String(e));
         setPhase("error");
       }
     })();
     return () => { cancelled = true; };
-  }, [phase, sessionId, inviteId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase]);
 
   if (phase === "need-name") {
     const ok = name.trim().length > 0;
     return (
       <div className="home" data-testid="join-need-name">
         <h1>You're invited!</h1>
-        <p style={{ color: "var(--fg-muted)" }}>Pick a name to join the game.</p>
+        <p style={{ color: "var(--fg-muted)" }}>
+          {payload?.romName ? <>Join <strong>{payload.romName}</strong>. </> : null}Pick a name to join.
+        </p>
         <div className="field">
           <label htmlFor="jn">Your name</label>
           <input id="jn" data-testid="join-name" autoFocus maxLength={32} placeholder="e.g. Robin"
@@ -78,7 +89,7 @@ export function JoinPage() {
   return (
     <div className="home" data-testid="join-joining">
       <h1>Joining…</h1>
-      <p style={{ color: "var(--fg-muted)" }}>Redeeming your invite.</p>
+      <p style={{ color: "var(--fg-muted)" }}>Connecting and redeeming your invite.</p>
     </div>
   );
 }

@@ -67,25 +67,18 @@ full design and `DECISIONS.md` for the choices made.
      firebase use YOUR-PROJECT-ID && firebase deploy --only database`
      (deploying RTDB rules is free on Spark).
 5. **Get your web config**: *Project settings (gear) → General → Your apps →* add a
-   **Web app** (`</>`). Copy the `firebaseConfig` object. You need at least
-   `apiKey`, `authDomain`, `databaseURL`, `projectId`, `appId`. **This config is not
-   a secret** — security comes from the rules, not from hiding it.
+   **Web app** (`</>`). Copy the whole `firebaseConfig` object — you'll paste it into
+   the app in step 3. You need at least `apiKey`, `databaseURL`, `projectId`. **This
+   config is not a secret** — security comes from the rules, not from hiding it.
 
-Turn that config into the JSON this app reads (note the camelCase keys):
-
-```json
-{
-  "apiKey": "AIza…",
-  "authDomain": "your-project.firebaseapp.com",
-  "databaseURL": "https://your-project-default-rtdb.firebaseio.com",
-  "projectId": "your-project",
-  "appId": "1:…:web:…"
-}
-```
+> **Where does the config go? Into the app, on your device — NOT into the build.**
+> Baking it into the public site would let any random visitor use (and burn the free
+> quota of) your Firebase project. Instead you paste it in-app; it stays in your
+> browser, and your **invite links carry it** so the people you invite can connect.
 
 ---
 
-## 2. Deploy to GitHub Pages
+## 2. Deploy to GitHub Pages (once)
 
 This repo ships a workflow (`.github/workflows/pages.yml`) that builds the static
 site and deploys it to Pages. It runs on every push **and** can be **run manually
@@ -93,34 +86,34 @@ from the UI** (it declares `workflow_dispatch`).
 
 1. **Enable Pages with the Actions source**: repo *Settings → Pages → Build and
    deployment → Source → GitHub Actions*. (If you cloned/forked, do this once.)
-2. **Provide your Firebase config** as a repo **Actions variable** (not a secret —
-   it isn’t one, and variables are easier): *Settings → Secrets and variables →
-   Actions → Variables → New repository variable*, name **`FIREBASE_CONFIG`**, value
-   = the JSON from step 1 above (single line is fine). The workflow writes it into
-   the build. *(Alternatively, commit a `client/public/firebase-config.json` — it’s
-   git-ignored by default; `git add -f` it if you prefer. It’s not secret.)*
-3. **Deploy.** Either push to `main`/`serverless`, **or — after setting the variable —
-   trigger it by hand with no commit**: repo *Actions → "Deploy static PWA to GitHub
-   Pages" → Run workflow → (pick the branch) → Run workflow*. The config variable is
-   read at build time, so a manual run picks up your latest `FIREBASE_CONFIG` value.
-   Your site appears at `https://<you>.github.io/<repo>/` (or your custom Pages domain).
-4. **Open it on your phone.** First load registers a service worker and reloads once
-   to enable cross-origin isolation (needed by the emulator). Then *Start a new game*.
+2. **Deploy.** Push to `main`, **or** trigger it by hand: repo *Actions → "Deploy
+   static PWA to GitHub Pages" → Run workflow → pick `main` → Run workflow*. Your site
+   appears at `https://<you>.github.io/<repo>/` (or your custom Pages domain).
 
-> The build’s base path is `/<repo>/`. The workflow sets it automatically from the
-> repo name. If you serve from a custom domain at the root, set `VITE_BASE=/`.
+There is **no Firebase config to set in GitHub** — config is entered in the app
+(step 3). If you previously set a `FIREBASE_CONFIG` repo variable, you can delete it.
+
+> The build’s base path is `/<repo>/` (set automatically from the repo name). For a
+> custom domain at the root, set `VITE_BASE=/`.
 
 ---
 
 ## 3. Play
 
-- **Start a game** (you become the *owner*): enter your name, pick your local `.gba`
-  ROM. Your ROM is fingerprinted (SHA-256) and stored only on your device.
-- **Invite people**: open the in-game menu (drag the handle up) → *Create invite
-  link* → send it to **one** person. Each link works once.
-- **Join**: open the invite link, pick a name, then load **your own copy of the same
-  ROM**. If it doesn’t byte-match, you get a clear message — everyone must use the
-  exact same ROM version (like a shared mod).
+- **Set up hosting (owner, once per device):** open the site → *Hosting → Add your
+  Firebase config* → paste the `firebaseConfig` object from step 1 → *Save*. It's
+  stored only on this device. (Invited players don't need this — only hosts do.)
+- **Start a game:** enter your name → *Start a new game* → pick your local `.gba`
+  ROM. You can create as many games as you like. Your ROM is fingerprinted (SHA-256)
+  and stored only on your device.
+- **Invite people:** open the in-game menu (drag the handle up) → *Create invite
+  link* → send it to **one** person. Each link is single-use **and carries your
+  config**, so the invitee can connect to your project without any setup.
+- **Join:** open the invite link, pick a name, then load **your own copy of the same
+  ROM**. If it doesn't byte-match you get a clear message — everyone must use the
+  exact same ROM version (like a shared mod). You'll see only the games you were
+  invited to; they can be from different hosts/projects. You can also add your own
+  config to host your own games.
 - **Controls/handoff**: the controller has the gamepad; others watch. *Hand over* to
   pass control, or *Take control* when the seat is free. If the controller’s
   connection drops, control passes automatically to the next person.
@@ -138,8 +131,8 @@ the ability to mint invites / manage existing games you created.
 Because you control the Firebase project, recovery is a one-line console edit
 (console writes bypass the rules):
 
-1. In the app (home screen, or the in-game menu → *Your device ID*), copy your
-   **current** UID. Keep it somewhere safe in advance if you can.
+1. In the app (home screen → *Hosting → Your device ID*, or the in-game menu), copy
+   your **current** UID for that project. Keep it somewhere safe in advance if you can.
 2. In the Firebase console → *Realtime Database → Data*, navigate to
    `sessions / <sessionId> / meta / owners` and add a child:
    **key = your current UID, value = `true`** (boolean).

@@ -98,8 +98,9 @@ export interface FirebaseConfigLike {
 }
 
 export interface BackendAdapter {
-  // identity / lifecycle
-  init(config: FirebaseConfigLike): Promise<void>;
+  // identity / lifecycle. `instanceId` is only for tests needing several
+  // adapters per process; the browser omits it (one stable app per project).
+  init(config: FirebaseConfigLike, instanceId?: string): Promise<void>;
   signInAnonymously(): Promise<MemberId>; // durable per-device id
   getStoredMemberId(): MemberId | null; // best-effort, from local storage
   currentMemberId(): MemberId | null;

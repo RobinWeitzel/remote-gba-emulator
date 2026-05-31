@@ -2,6 +2,19 @@
 
 Only hard blockers or things genuinely requiring the human go here. Empty = no blockers.
 
+## ⚠️ Config model changed (re-read) — config is NO LONGER baked into the deploy
+The previous build baked your Firebase config into the public site, which let any
+visitor consume your free quota. Fixed: **config is now entered in-app and travels
+inside invite links.**
+- **You can delete the `FIREBASE_CONFIG` repo variable** — it's unused now.
+- After deploying the new build, on the site go to **Hosting → Add your Firebase
+  config** and paste your `firebaseConfig`. Then *Start a new game* and *Create
+  invite link* — the link carries your config so invitees just open it.
+- Random visitors to your URL now see only an empty lobby + "add config" — they
+  cannot touch your project.
+- **Reload Permission-denied is fixed** (anonymous identity is now stable per
+  project across reloads).
+
 ## To go fully live — YOUR one-time actions (not blockers for the build)
 The re-platforming is complete and deployed. The deployed app currently shows
 "add your Firebase config" because only you can create the (free) Firebase

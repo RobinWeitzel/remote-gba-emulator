@@ -9,9 +9,10 @@ const CFG: FirebaseConfigLike = {
   apiKey: "fake", databaseURL: "https://demo-gba-default-rtdb.firebaseio.com", projectId: "demo-gba",
   emulators: { auth: "http://127.0.0.1:9099", database: { host: "127.0.0.1", port: 9000 } },
 };
+let __dev = 0;
 async function clearDb() { await fetch("http://127.0.0.1:9000/.json?ns=demo-gba-default-rtdb", { method: "DELETE" }); }
 async function device(): Promise<FirebaseAdapter> {
-  const a = new FirebaseAdapter(); await a.init(CFG); await a.signInAnonymously(); return a;
+  const a = new FirebaseAdapter(); await a.init(CFG, String(++__dev)); await a.signInAnonymously(); return a;
 }
 async function pair() {
   const owner = await device();
