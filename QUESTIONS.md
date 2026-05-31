@@ -8,7 +8,7 @@ The re-platforming is complete and deployed. The deployed app currently shows
 project. Follow **README → "1. Firebase setup"** then **"2. Deploy"**, in short:
 1. Create a free **Spark** Firebase project; enable **Realtime Database** + **Anonymous Auth**.
 2. Publish `database.rules.json` (paste in console, or `firebase deploy --only database`).
-3. Add a repo **Actions variable `FIREBASE_CONFIG`** with your web-config JSON (it isn't a secret). Re-run the deploy.
+3. Add a repo **Actions variable `FIREBASE_CONFIG`** with your web-config JSON (it isn't a secret), then **re-run the deploy from the UI** (repo *Actions → "Deploy static PWA to GitHub Pages" → Run workflow*) — no commit needed; the variable is read at build time.
 4. Open the site on Android and run the full flow (see Q1).
 The code path is fully verified against the Firebase emulator (49 tests) and via
 a live browser-owner + second-device E2E; only your own project + config remain.

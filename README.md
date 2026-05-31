@@ -88,7 +88,8 @@ Turn that config into the JSON this app reads (note the camelCase keys):
 ## 2. Deploy to GitHub Pages
 
 This repo ships a workflow (`.github/workflows/pages.yml`) that builds the static
-site and deploys it to Pages on every push.
+site and deploys it to Pages. It runs on every push **and** can be **run manually
+from the UI** (it declares `workflow_dispatch`).
 
 1. **Enable Pages with the Actions source**: repo *Settings → Pages → Build and
    deployment → Source → GitHub Actions*. (If you cloned/forked, do this once.)
@@ -98,8 +99,11 @@ site and deploys it to Pages on every push.
    = the JSON from step 1 above (single line is fine). The workflow writes it into
    the build. *(Alternatively, commit a `client/public/firebase-config.json` — it’s
    git-ignored by default; `git add -f` it if you prefer. It’s not secret.)*
-3. **Push** to `main` (or `serverless`). The workflow builds and deploys. Your site
-   appears at `https://<you>.github.io/<repo>/` (or your custom Pages domain).
+3. **Deploy.** Either push to `main`/`serverless`, **or — after setting the variable —
+   trigger it by hand with no commit**: repo *Actions → "Deploy static PWA to GitHub
+   Pages" → Run workflow → (pick the branch) → Run workflow*. The config variable is
+   read at build time, so a manual run picks up your latest `FIREBASE_CONFIG` value.
+   Your site appears at `https://<you>.github.io/<repo>/` (or your custom Pages domain).
 4. **Open it on your phone.** First load registers a service worker and reloads once
    to enable cross-origin isolation (needed by the emulator). Then *Start a new game*.
 
