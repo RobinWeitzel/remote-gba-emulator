@@ -31,6 +31,7 @@ interface Props {
   onTakeControl?: () => void;
   inviteUrl?: string | null;
   onMintInvite?: () => void;
+  onEndGame?: () => void;
 }
 
 export function InGameSheet(props: Props) {
@@ -38,7 +39,7 @@ export function InGameSheet(props: Props) {
     saveName, romName, romId, saveId, role, connState, roster, selfId,
     multiplier, muted, isController, layoutPref,
     onExit, onCycleSpeed, onToggleMute, onLayoutChange, onHandover,
-    selfUid, isOwner, controllerFree, onTakeControl, inviteUrl, onMintInvite,
+    selfUid, isOwner, controllerFree, onTakeControl, inviteUrl, onMintInvite, onEndGame,
   } = props;
 
   const [state, setState] = useState<SheetState>("peek");
@@ -183,6 +184,22 @@ export function InGameSheet(props: Props) {
                   onFocus={(e: any) => e.target.select()}
                   style={{ width: "100%", fontSize: 12, padding: 6, borderRadius: 6, fontFamily: "ui-monospace, monospace" }}
                 />
+              </div>
+            )}
+
+            {/* End game (owner) — delete the session to free Spark storage */}
+            {isOwner && onEndGame && (
+              <div className="exp-section">
+                <button
+                  onClick={onEndGame}
+                  data-testid="end-game"
+                  style={{
+                    background: "transparent", color: "#e0533d", border: "1px solid #e0533d55",
+                    borderRadius: "var(--r-md)", padding: "8px 14px", fontSize: 13, cursor: "pointer",
+                  }}
+                >
+                  End game & delete for everyone
+                </button>
               </div>
             )}
 

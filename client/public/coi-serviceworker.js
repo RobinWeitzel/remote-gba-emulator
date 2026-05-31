@@ -14,8 +14,19 @@
 // isolate, so isolation is never silently lost.
 let coepCredentialless = false;
 if (typeof window === 'undefined') {
+    // App-shell cache for offline launch + installability (SPEC §10). This is
+    // layered ON TOP of the COOP/COEP header injection below — every response,
+    // cached or network, gets the isolation headers re-applied, so caching
+    // never weakens cross-origin isolation. Bump CACHE to invalidate old shells.
+    const CACHE = "gba-shell-v1";
+
     self.addEventListener("install", () => self.skipWaiting());
-    self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim()));
+    self.addEventListener("activate", (event) => event.waitUntil((async () => {
+        // Drop stale shell caches from older deploys.
+        const keys = await caches.keys();
+        await Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)));
+        await self.clients.claim();
+    })()));
 
     self.addEventListener("message", (ev) => {
         if (!ev.data) {
@@ -34,41 +45,54 @@ if (typeof window === 'undefined') {
         }
     });
 
+    // Re-apply the cross-origin isolation headers to ANY response (network or
+    // cache). Unchanged from upstream coi-serviceworker — this is the part that
+    // makes crossOriginIsolated/SharedArrayBuffer work on a static host.
+    function withCoiHeaders(response) {
+        if (!response || response.status === 0) return response;
+        const newHeaders = new Headers(response.headers);
+        newHeaders.set("Cross-Origin-Embedder-Policy", coepCredentialless ? "credentialless" : "require-corp");
+        if (!coepCredentialless) {
+            newHeaders.set("Cross-Origin-Resource-Policy", "cross-origin");
+        }
+        newHeaders.set("Cross-Origin-Opener-Policy", "same-origin");
+        return new Response(response.body, {
+            status: response.status,
+            statusText: response.statusText,
+            headers: newHeaders,
+        });
+    }
+
     self.addEventListener("fetch", function (event) {
         const r = event.request;
         if (r.cache === "only-if-cached" && r.mode !== "same-origin") {
             return;
         }
-
         const request = (coepCredentialless && r.mode === "no-cors")
-            ? new Request(r, {
-                credentials: "omit",
-            })
+            ? new Request(r, { credentials: "omit" })
             : r;
-        event.respondWith(
-            fetch(request)
-                .then((response) => {
-                    if (response.status === 0) {
-                        return response;
-                    }
 
-                    const newHeaders = new Headers(response.headers);
-                    newHeaders.set("Cross-Origin-Embedder-Policy",
-                        coepCredentialless ? "credentialless" : "require-corp"
-                    );
-                    if (!coepCredentialless) {
-                        newHeaders.set("Cross-Origin-Resource-Policy", "cross-origin");
-                    }
-                    newHeaders.set("Cross-Origin-Opener-Policy", "same-origin");
+        const url = new URL(r.url);
+        const cacheable = r.method === "GET" && url.origin === self.location.origin;
 
-                    return new Response(response.body, {
-                        status: response.status,
-                        statusText: response.statusText,
-                        headers: newHeaders,
-                    });
-                })
-                .catch((e) => console.error(e))
-        );
+        event.respondWith((async () => {
+            // Network-first so live deploys + Firebase traffic stay fresh; the
+            // app-shell cache is a fallback for offline launch only.
+            try {
+                const net = await fetch(request);
+                if (cacheable && net && net.status === 200 && net.type === "basic") {
+                    const copy = net.clone();
+                    caches.open(CACHE).then((c) => c.put(request, copy)).catch(() => {});
+                }
+                return withCoiHeaders(net);
+            } catch (e) {
+                if (cacheable) {
+                    const cached = await caches.match(request);
+                    if (cached) return withCoiHeaders(cached);
+                }
+                throw e;
+            }
+        })());
     });
 
 } else {

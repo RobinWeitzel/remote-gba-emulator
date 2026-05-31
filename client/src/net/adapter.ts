@@ -140,4 +140,8 @@ export interface BackendAdapter {
   saveDurable(slot: string, data: SaveData): Promise<void>;
   loadDurable(slot: string): Promise<SaveData | null>;
   listSaves(): Promise<SaveMeta[]>;
+
+  // free-tier guardrails (§12)
+  pruneRelay(): Promise<void>; // clear superseded sync/inputs + sync/speed
+  deleteSession(): Promise<void>; // owner-only teardown of the whole session
 }

@@ -528,6 +528,41 @@ export class FirebaseAdapter implements BackendAdapter {
       name: s.name,
     }));
   }
+
+  // ---- free-tier guardrails (§12) ----
+  // Clear the transient relay streams once a snapshot has superseded them — the
+  // snapshot is the authority for late joiners, so accumulated inputs/speed are
+  // pure egress/storage waste. Controller-only write (rules), called right after
+  // publishSnapshot.
+  async pruneRelay(): Promise<void> {
+    this.requireSession();
+    try {
+      await update(this.sref("sync"), { inputs: null, speed: null });
+    } catch { /* ignore — non-fatal */ }
+  }
+
+  // Owner-only teardown: remove the whole session subtree (rules gate this on
+  // owner + deletion). Used to clean up an ended game so it doesn't sit against
+  // the Spark storage cap.
+  async deleteSession(): Promise<void> {
+    if (!this.db || !this.sessionId) return;
+    if (!this.owner) throw new Error("Only the owner can end and delete the session.");
+    await this.cancelReleaseOnDisconnect();
+    if (this.heartbeat) { clearInterval(this.heartbeat); this.heartbeat = null; }
+    for (const u of this.unsubs) { try { u(); } catch { /* ignore */ } }
+    this.unsubs.clear();
+    // Null each subtree explicitly. A single remove() of the session node is
+    // rejected because RTDB evaluates the descendant .write rules on a subtree
+    // delete (cascade does not bypass them in the emulator); the owner has an
+    // admin override on each subtree's rule, so the multi-path null update
+    // passes and the now-empty session node is auto-pruned.
+    await update(ref(this.db, `sessions/${this.sessionId}`), {
+      meta: null, invites: null, members: null, controllerLock: null, sync: null, saves: null,
+    });
+    this.sessionId = null;
+    this.meta = null;
+    this.owner = false;
+  }
 }
 
 // Convenience helper used by adapter selection (§16: BACKEND = "firebase-rtdb").

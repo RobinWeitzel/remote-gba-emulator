@@ -20,7 +20,7 @@ import { navigate, useRoute, routeUrl } from "../lib/router";
 import { getBackend } from "../net/backend";
 import type { BackendAdapter, InviteRef, MemberId, RosterMember } from "../net/adapter";
 import { getRomBytes, importRom } from "../lib/romStore";
-import { rememberSession, touchSession } from "../lib/sessionStore";
+import { rememberSession, touchSession, forgetSession } from "../lib/sessionStore";
 import { bytesToBase64, base64ToBytes } from "../lib/b64";
 import { getPlayerName, setPlayerName } from "../lib/player";
 import { effectiveControlLayout, loadGlobal, useOrientation, useResolvedSettings, type ControlLayout } from "../lib/settings";
@@ -30,6 +30,9 @@ import { InGameSheet } from "./InGameSheet";
 import { DEFAULTS, nextLadderSpeed, type Role, type RosterEntry, type GbaButton } from "@gba/shared";
 
 type Status = "loading" | "needs-name" | "needs-rom" | "needs-tap" | "running" | "error";
+
+// How often the controller writes the durable checkpoint to saves/latest.
+const DURABLE_INTERVAL_MS = 30_000;
 
 export function SessionPage() {
   const route = useRoute();
@@ -54,6 +57,12 @@ export function SessionPage() {
   const coreBootedRef = useRef<boolean>(false);
   const joinNameRef = useRef<string>("");
   const romHashRef = useRef<string>("");
+  // Durable long-term save (§12): a checkpoint that survives everyone leaving,
+  // written by the controller every DURABLE_INTERVAL_MS. durableFallback holds a
+  // loaded durable save used to bootstrap a session whose live snapshot was
+  // pruned (cold rejoin days later).
+  const lastDurableAtRef = useRef<number>(0);
+  const durableFallbackRef = useRef<{ data: string; frame: number; multiplier: number } | null>(null);
   const controllerStateRef = useRef<{ holder: MemberId | null; queue: MemberId[] }>({ holder: null, queue: [] });
   const rosterRef = useRef<RosterMember[]>([]);
 
@@ -147,13 +156,16 @@ export function SessionPage() {
           if (bytes) {
             lastSnapshotFrameRef.current = frame;
             lastSnapshotAtMsRef.current = now;
-            await adapter.publishSnapshot({
-              frame,
-              data: bytesToBase64(bytes),
-              compressed: false,
-              rawSize: bytes.length,
-              multiplier: multiplierRef.current,
-            });
+            const b64 = bytesToBase64(bytes);
+            await adapter.publishSnapshot({ frame, data: b64, compressed: false, rawSize: bytes.length, multiplier: multiplierRef.current });
+            // Guardrails (§12): the snapshot supersedes the relay streams — prune
+            // them so they don't accumulate against the Spark egress/storage cap.
+            adapter.pruneRelay().catch(() => {});
+            // Durable checkpoint, throttled — survives everyone leaving.
+            if (now - lastDurableAtRef.current >= DURABLE_INTERVAL_MS) {
+              lastDurableAtRef.current = now;
+              adapter.saveDurable("latest", { data: b64, frame, at: Date.now(), by: selfIdRef.current ?? "" }).catch(() => {});
+            }
           }
         }
       } catch (e) {
@@ -296,6 +308,15 @@ export function SessionPage() {
         applyServerSnapshot(msg.data, msg.frame, msg.multiplier).catch(() => {});
       });
 
+      // Durable checkpoint fallback (§12): if a cold rejoin finds no live
+      // snapshot (sync/snapshot was pruned after everyone left), bootstrap from
+      // saves/latest. A live onSnapshot, if any, overrides this with newer data.
+      adapter.loadDurable("latest").then((s) => {
+        if (s && !pendingSnapshotRef.current) {
+          durableFallbackRef.current = { data: s.data, frame: s.frame, multiplier: 1 };
+        }
+      }).catch(() => {});
+
       // ROM gate (§8): need a byte-identical local ROM.
       const bytes = await getRomBytes(meta.romHash);
       if (!bytes) { if (!disposed) setStatus("needs-rom"); return; }
@@ -391,6 +412,11 @@ export function SessionPage() {
       const p = pendingSnapshotRef.current;
       pendingSnapshotRef.current = null;
       await applyServerSnapshot(p.data, p.frame, p.multiplier);
+    } else if (durableFallbackRef.current) {
+      // No live snapshot — resume from the durable checkpoint (§12).
+      const d = durableFallbackRef.current;
+      durableFallbackRef.current = null;
+      await applyServerSnapshot(d.data, d.frame, d.multiplier);
     } else {
       core.setSpeed(multiplierRef.current);
     }
@@ -435,6 +461,18 @@ export function SessionPage() {
   // Take control when the seat is free.
   const takeControl = () => {
     adapterRef.current?.claimControl().catch(() => {});
+  };
+
+  const endGame = async () => {
+    const adapter = adapterRef.current;
+    if (!adapter || !adapter.isOwner()) return;
+    if (!window.confirm("End this game for everyone and delete it? This can't be undone.")) return;
+    stopSnapshotLoop();
+    try { await adapter.deleteSession(); } catch (e) { console.warn("deleteSession failed", e); }
+    forgetSession(sessionId);
+    try { wakeRef.current?.release(); } catch { /* ignore */ }
+    try { coreRef.current?.dispose(); } catch { /* ignore */ }
+    navigate("/");
   };
 
   const mintInvite = async () => {
@@ -550,6 +588,7 @@ export function SessionPage() {
         onTakeControl={takeControl}
         inviteUrl={inviteUrl}
         onMintInvite={mintInvite}
+        onEndGame={endGame}
       />
 
       {status === "needs-tap" && (

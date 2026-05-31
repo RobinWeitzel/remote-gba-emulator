@@ -40,6 +40,21 @@ jobs:
 
       - run: npm ci
 
+      # The Firebase web config is not a secret (§4) but is per-project and not
+      # committed. Provide it as a repo Actions VARIABLE named FIREBASE_CONFIG
+      # (Settings → Secrets and variables → Actions → Variables) holding the
+      # JSON. If unset, the deployed app shows setup guidance instead of running.
+      - name: Write firebase-config.json from repo variable (if set)
+        env:
+          FIREBASE_CONFIG: ${{ vars.FIREBASE_CONFIG }}
+        run: |
+          if [ -n "$FIREBASE_CONFIG" ]; then
+            printf '%s' "$FIREBASE_CONFIG" > client/public/firebase-config.json
+            echo "Wrote client/public/firebase-config.json from the FIREBASE_CONFIG variable."
+          else
+            echo "::warning::FIREBASE_CONFIG repo variable is not set — the deployed app will show Firebase setup guidance until you add it."
+          fi
+
       - name: Build client (base = /<repo>/)
         run: npm --workspace client run build
         env:

@@ -44,7 +44,14 @@ Get vendored mGBA (threaded build) running under cross-origin isolation from a s
 - [x] **Live browser E2E vs emulator**: owner creates session under locked rules, mGBA runs under COI, owner is controller, mints single-use invite; a distinct device (Node) redeems it & joins; owner's UI live-updates to Players(2); presence shows the guest "away" on disconnect.
 - 46 tests total green (26 unit + 20 integration).
 ### M4 — Local ROM loading + hash gate — ⬜
-### M5 — Persistence, guardrails, PWA, deploy, README — ⬜
+### M5 — Persistence, guardrails, PWA, deploy, README — ✅
+- [x] Durable saves: controller writes `saves/latest` every ~30s; bootstrap from it on cold rejoin when the live snapshot was pruned
+- [x] Guardrails (§12): prune `sync/inputs`+`sync/speed` after each snapshot; latest snapshot only (overwrite); owner "End game & delete" teardown (multi-path null + owner admin-override rule, DECISIONS D14)
+- [x] PWA: app-shell cache layered into the single coi-serviceworker (network-first + cache fallback) — re-verified COI still true with caching on; manifest base-safe; installable
+- [x] Deploy: Pages workflow writes `firebase-config.json` from the `FIREBASE_CONFIG` repo variable; Pages enabled (Actions source)
+- [x] README rewritten for serverless: Firebase setup wizard, deploy steps, owner-recovery procedure, free-tier notes, local dev
+- [x] `firebaseGuardrails.itest.ts` (3 tests): durable save round-trip, prune clears relay, owner-only session delete
+- 49 tests total green (26 unit + 23 integration).
 ### M6 — Optional hardening (App Check, 2nd adapter) — ⬜ (not started until M0–M5 solid)
 
 ## Notes / log
