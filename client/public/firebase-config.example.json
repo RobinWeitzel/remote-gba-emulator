@@ -1,0 +1,8 @@
+{
+  "_comment": "Copy this file to firebase-config.json (same folder) and fill in your Firebase project's web config. This is NOT a secret — security comes from the Realtime Database rules, not from hiding these values. See README → Firebase setup.",
+  "apiKey": "YOUR_FIREBASE_API_KEY",
+  "authDomain": "your-project.firebaseapp.com",
+  "databaseURL": "https://your-project-default-rtdb.firebaseio.com",
+  "projectId": "your-project",
+  "appId": "YOUR_FIREBASE_APP_ID"
+}

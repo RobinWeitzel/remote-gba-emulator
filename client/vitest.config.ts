@@ -14,5 +14,9 @@ export default defineConfig({
     globals: true,
     setupFiles: ["./src/test/setup.ts"],
     css: true,
+    // Emulator-backed integration tests (*.itest.ts) run via the separate
+    // vitest.integration.config.ts under `firebase emulators:exec` — exclude
+    // them from the default unit run so `npm test` needs no emulator.
+    exclude: ["**/node_modules/**", "**/dist/**", "**/*.itest.ts"],
   },
 });

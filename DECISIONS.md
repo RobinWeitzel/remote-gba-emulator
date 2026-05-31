@@ -12,6 +12,12 @@ GitHub Pages serves project sites at `https://<user>.github.io/<repo>/`. Vite `b
 ## D3 — Firebase web config supplied at runtime via `firebase-config.json`
 The Firebase web config is not a secret (§4) but it is per-user. Rather than bake it into the bundle at build time (forcing a rebuild to deploy), the app fetches a same-origin `firebase-config.json` at startup. The user copies `firebase-config.example.json` → `firebase-config.json` with their project values. If missing/placeholder, the app shows setup guidance instead of crashing. Same-origin fetch is COEP-safe.
 
+## D8 — RTDB transaction update fns must handle the optimistic stale-null run
+RTDB `runTransaction` invokes the update function optimistically against the local cache FIRST (often `null` for a node this client never read), and a returned `undefined` aborts **finally** — no server re-run. A naive `holder === uid ? null : undefined` release therefore aborts on the stale null and never releases the lock. Pattern adopted: for release, treat `null`-or-own-uid as "write null" so RTDB re-runs against the real server value and commits; only a lock genuinely held by someone else is left untouched. Claim stays `null → uid, else abort` (correct: claim must only win when truly free). Verified by the onDisconnect drop integration test.
+
+## D9 — `firebase-config.json` is git-ignored; example committed
+Real per-user config (`client/public/firebase-config.json`) is git-ignored; `firebase-config.example.json` is committed with placeholders. Not secret, but avoids one user's project pointer landing in the repo. The app shows friendly setup guidance (`MissingConfigError`) when it's still the placeholder.
+
 ## D5 — COEP `require-corp` first, auto-degrade to `credentialless`
 SPEC §9 mandates COEP `require-corp`. Verified research (firebase-js-sdk #6467; web.dev COOP/COEP) notes the one Firebase breakage under require-corp is `signInWithPopup` — moot here, we use `signInAnonymously` (no popup). RTDB uses WebSocket (not COEP-gated) + CORS fetches (COEP-permitted), so require-corp should be fine. The vendored coi-serviceworker is configured `coepCredentialless: () => false` (require-corp) with `coepDegrade: () => true`, so if require-corp ever fails to isolate it automatically retries as `credentialless` — isolation is never silently lost. If M1 Firebase testing reveals a require-corp problem, flip the one line to credentialless.
 

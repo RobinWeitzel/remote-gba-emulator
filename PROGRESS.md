@@ -9,7 +9,8 @@ Tracking: this file (status), `DECISIONS.md` (choices + rationale), `QUESTIONS.m
 
 ## Milestones (§14)
 
-### M0 — Cross-origin isolation on a static host (make-or-break) — ⚠️ (desktop-verified; Android pending human)
+### M0 — Cross-origin isolation on a static host (make-or-break) — ⚠️ (LIVE-verified on deploy; Android pending human)
+**Live deploy: https://robinweitzel.de/play-together-gba/ — verified on the real URL: crossOriginIsolated=true, SAB available, threaded mGBA boots a locally-uploaded ROM, 0 console errors.**
 Get vendored mGBA (threaded build) running under cross-origin isolation from a static host via a service-worker COOP/COEP shim. Verify `crossOriginIsolated === true`, `SharedArrayBuffer` defined, emulator boots a locally-loaded ROM.
 - [x] Static Vite build with correct base path for project-page subpath (`VITE_BASE`, hash routing, `BASE_URL` for runtime URLs)
 - [x] coi-serviceworker COOP/COEP shim vendored + wired in index.html (require-corp, auto-degrade)
@@ -18,7 +19,14 @@ Get vendored mGBA (threaded build) running under cross-origin isolation from a s
 - [ ] **Real Android device verification — REQUIRES THE HUMAN** (QUESTIONS.md Q1; shim path is identical to the desktop-verified one)
 - [ ] Confirm the *live* deployed URL (custom domain `robinweitzel.de`) serves over HTTPS so the SW registers (verify post-deploy)
 
-### M1 — Backend adapter + Firebase RTDB transport — ⬜
+### M1 — Backend adapter + Firebase RTDB transport — ✅ (emulator-verified)
+- [x] `net/adapter.ts` — transport-agnostic §3 interface + types (relay payloads keep existing shapes + `by`)
+- [x] `net/firebaseAdapter.ts` — Firebase RTDB implementation (anon sign-in w/ IndexedDB persistence, create/join/reconnect/leave, mintInvite, atomic single-use redeem via transaction, roster, presence + onDisconnect, controllerLock transactions, sync relay, durable saves)
+- [x] `net/config.ts` + `firebase-config.example.json` — runtime config load (DECISIONS D3)
+- [x] Firebase Emulator wiring: `firebase.json`, `.firebaserc` (demo-gba), `database.rules.json` (open for M1), `npm run itest`
+- [x] **5/5 integration tests pass** (`firebaseAdapter.itest.ts`): create→owner is member+controller; second device redeems invite & joins; roster syncs to both; double-redeem rejected; reconnect needs no fresh invite; **ungraceful drop via onDisconnect clears presence + releases control**.
+- Fixed an RTDB transaction stale-null abort pitfall in releaseControl/leave (DECISIONS D8).
+- firebase SDK not yet in the shipped bundle (nothing imports it until M3 wiring) — by design.
 ### M2 — Capability model + security rules — ⬜
 ### M3 — Wire sync/speed/handoff onto RTDB — ⬜
 ### M4 — Local ROM loading + hash gate — ⬜

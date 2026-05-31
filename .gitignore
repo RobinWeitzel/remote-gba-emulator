@@ -30,3 +30,13 @@ coverage/
 
 # Brainstorming session scratch (mockups, transient state).
 .superpowers/
+
+# User-supplied Firebase web config (not a secret, but per-user). The committed
+# example is firebase-config.example.json; users copy it to this:
+/client/public/firebase-config.json
+
+# Firebase emulator / tooling scratch
+firebase-debug.log
+database-debug.log
+firebase-export-*/
+.firebase/

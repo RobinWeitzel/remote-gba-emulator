@@ -14,7 +14,9 @@
     "dev:client": "npm --workspace client run dev",
     "build": "npm --workspace client run build && npm --workspace server run build",
     "start": "npm --workspace server run start",
-    "typecheck": "npm --workspace shared run typecheck && npm --workspace client run typecheck && npm --workspace server run typecheck"
+    "typecheck": "npm --workspace shared run typecheck && npm --workspace client run typecheck && npm --workspace server run typecheck",
+    "itest": "npx -y firebase-tools emulators:exec --project demo-gba --only auth,database \"npm --workspace client run test:itest\"",
+    "rules:test": "npx -y firebase-tools emulators:exec --project demo-gba --only auth,database \"npm --workspace client run test:itest\""
   },
   "devDependencies": {
     "concurrently": "^9.1.0",
