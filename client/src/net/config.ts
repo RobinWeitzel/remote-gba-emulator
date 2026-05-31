@@ -15,13 +15,36 @@ export class MissingConfigError extends Error {
 
 const PLACEHOLDER = "YOUR_FIREBASE_API_KEY";
 
+// The Firebase console hands you a JavaScript object (unquoted keys, maybe a
+// `const firebaseConfig = {...};` wrapper and trailing commas) — not JSON. To
+// save everyone the gotcha, accept that format too: try strict JSON first, then
+// fall back to a relaxed parse that quotes bare keys and strips the wrapper.
+export function parseConfigText(text: string): any {
+  try {
+    return JSON.parse(text);
+  } catch {
+    /* fall through to relaxed parse */
+  }
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start < 0 || end <= start) throw new Error("no config object found");
+  const objText = text.slice(start, end + 1);
+  const relaxed = objText
+    // quote a bare identifier key that follows `{` or `,` (won't touch the
+    // `:` inside quoted URL values, which are preceded by `"`)
+    .replace(/([{,]\s*)([A-Za-z_$][\w$]*)\s*:/g, '$1"$2":')
+    // drop trailing commas before } or ]
+    .replace(/,(\s*[}\]])/g, "$1");
+  return JSON.parse(relaxed);
+}
+
 export async function loadFirebaseConfig(): Promise<FirebaseConfigLike> {
   const url = `${import.meta.env.BASE_URL}firebase-config.json`;
   let raw: any;
   try {
     const res = await fetch(url, { cache: "no-cache" });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    raw = await res.json();
+    raw = parseConfigText(await res.text());
   } catch (e) {
     throw new MissingConfigError(
       "Couldn't load firebase-config.json. Copy firebase-config.example.json to " +
